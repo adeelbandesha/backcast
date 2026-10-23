@@ -1,0 +1,33 @@
+name: Release
+
+# Runs only when started by hand, from a version tag:
+#   git tag v0.1.0 && git push origin v0.1.0
+#   gh workflow run release.yml --ref v0.1.0
+# The pypi environment then waits for the maintainer's approval before anything is uploaded.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pypi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/backcast/
+    permissions:
+      id-token: write # trusted publishing: PyPI verifies this token, so no password is stored anywhere
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - name: Started from a tag that matches the package version
+        run: |
+          version=$(uv version --short)
+          if [ "$GITHUB_REF_TYPE" != "tag" ] || [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "Start this workflow from the tag v$version (got $GITHUB_REF_TYPE $GITHUB_REF_NAME)"
+            exit 1
+          fi
+      - run: uv build
+      - run: uv publish
