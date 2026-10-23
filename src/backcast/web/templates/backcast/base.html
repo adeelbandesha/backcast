@@ -1,0 +1,48 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Backcast{% endblock %}</title>
+  <meta name="description" content="{% block description %}Walk-forward backtests that ask whether any forecasting model beats the naive forecast for a stock.{% endblock %}">
+  <meta name="color-scheme" content="light dark">
+  <script src="{% static 'backcast/js/theme.js' %}"></script>
+  <link rel="preload" href="{% static 'backcast/fonts/ibm-plex-sans-latin-wght-normal.woff2' %}" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="{% static 'backcast/css/app.css' %}">
+  <link rel="icon" href="{% static 'backcast/favicon.svg' %}" type="image/svg+xml">
+  {% block head %}{% endblock %}
+  <script src="{% static 'backcast/js/app.js' %}" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="masthead">
+    <div class="masthead-inner">
+      <a class="wordmark" href="{% url 'home' %}">Backcast</a>
+      {% block masthead_search %}
+        <form class="masthead-search" action="{% url 'home' %}" method="get" role="search">
+          {% include "backcast/_combobox.html" with field_id="masthead-symbol" label="Ticker or company" compact=True %}
+        </form>
+      {% endblock %}
+      <nav class="site-nav" aria-label="Site">
+        <a href="{% url 'models' %}"{% if request.resolver_match.url_name == 'models' %} aria-current="page"{% endif %}>Models</a>
+        <a href="{% url 'method' %}"{% if request.resolver_match.url_name == 'method' %} aria-current="page"{% endif %}>Method</a>
+        <button class="theme-toggle" type="button" aria-pressed="false" data-theme-toggle>
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg>
+          <span class="visually-hidden">Dark theme</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="page">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <p>Backcast replays the past to test forecasting models. It is a research tool, not investment advice.</p>
+      <p>Adjusted daily closes from Yahoo Finance, through yfinance. Prices may be delayed.</p>
+    </div>
+  </footer>
+</body>
+</html>

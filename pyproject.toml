@@ -1,0 +1,65 @@
+[project]
+name = "backcast"
+version = "0.1.0"
+description = "Can any model beat the naive forecast? Walk-forward backtests for stock forecasting models."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Adeel Bandesha", email = "adeel.bandesha148@gmail.com" }
+]
+requires-python = ">=3.13"
+keywords = ["forecasting", "time series", "backtesting", "walk-forward", "stock market", "statistics"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Framework :: Django",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = [
+    "django>=6.1.2",
+    "exchange-calendars>=4.13.2",
+    "gunicorn>=26.2.0",
+    "lightgbm>=4.7.0",
+    "numpy>=2.5.4",
+    "pandas>=3.1.0",
+    "scipy>=1.18.1",
+    "statsforecast>=2.0.1",
+    "whitenoise>=6.12.0",
+    "yfinance>=1.7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/adeelbandesha/backcast"
+Repository = "https://github.com/adeelbandesha/backcast"
+Issues = "https://github.com/adeelbandesha/backcast/issues"
+
+[project.scripts]
+backcast = "backcast.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-django>=4.14.0",
+    "ruff>=0.17.2",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "backcast.web.settings"
+testpaths = ["tests"]

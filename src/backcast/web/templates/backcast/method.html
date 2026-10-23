@@ -1,0 +1,81 @@
+{% extends "backcast/base.html" %}
+
+{% block title %}Method · Backcast{% endblock %}
+
+{% block content %}
+<article class="prose">
+  <h1>Method</h1>
+  <p class="lede">
+    Backcast asks one question of every stock: did any model forecast its price better than assuming nothing
+    changes? This page describes exactly how that is measured, and where the measurement stops.
+  </p>
+
+  <h2>The benchmark</h2>
+  <p>
+    The naive forecast says the close in <var>h</var> trading days will equal today's close. For prices that behave
+    like a random walk it is the best forecast available, which is why it is the bar every model has to clear.
+    Beating it consistently is rare.
+  </p>
+
+  <h2>Walk-forward windows</h2>
+  <p>
+    Backcast loads five years of daily closes and steps back from the latest one in
+    jumps of <var>h</var> days, placing {{ windows }} forecast origins. The windows do not overlap, so each
+    forecast is scored on a different future price. At every origin each model is fitted on all prices up to that
+    date, with at least {{ min_history }} days of history, and forecasts the close <var>h</var> trading days later.
+  </p>
+  <p>
+    The closes are adjusted for stock splits but not for dividends. Dividend adjustment rescales every earlier price
+    each time a dividend is paid, so the history would no longer show the prices people actually traded at. While a
+    market is open, today's price is left out: it isn't a close until the session ends.
+  </p>
+  <p>
+    Because the windows are <var>h</var> days apart, the 1-, 5- and 20-day backtests cover the most recent
+    {% widthratio windows 1 1 %}, {% widthratio windows 1 5 %} and {% widthratio windows 1 20 %} trading days.
+  </p>
+
+  <h2>Scoring</h2>
+  <p>Every metric is computed at the horizon endpoint only, on prices the model had not seen.</p>
+  <dl class="definitions">
+    <div><dt>Mean error</dt><dd>The mean absolute error, in the stock's currency.</dd></div>
+    <div><dt>vs naive</dt><dd>The model's mean error divided by naive's, shown as a percentage change. The leaderboard is sorted by it.</dd></div>
+    <div><dt>Windows won</dt><dd>The share of windows in which the model's error was smaller than naive's.</dd></div>
+    <div><dt>Direction right</dt><dd>How often the forecast moved in the same direction as the price. Windows where a model forecast no change at all are left out.</dd></div>
+    <div><dt>In {{ level }}% interval</dt><dd>How often the actual close fell inside the model's {{ level }}% prediction interval. Well calibrated intervals land near {{ level }}%.</dd></div>
+  </dl>
+
+  <h2>Is the margin real?</h2>
+  <p>
+    For each model, Backcast takes the per-window difference between naive's absolute error and the model's, and
+    runs a two-sided one-sample t-test on those {{ windows }} differences against zero. It's a paired test: both
+    models face the same prices in each window, so a window that was hard for everyone doesn't count against either.
+  </p>
+  <p>
+    Five models are compared with naive, and every extra comparison is another chance for one of them to look good
+    by luck. The p-values shown are adjusted for that with Holm's method, and a model only counts as a significant
+    winner when its adjusted p-value is below {{ significance }}.
+  </p>
+
+  <h2>Trends</h2>
+  <p>
+    A significant result only means the model did better over these particular windows. Some models forecast the
+    same direction almost every time: Drift, for one, always predicts the stock's long-run average move. In a
+    period when the price keeps rising, a model like that beats naive window after window without forecasting
+    anything. In a falling market it would lose just as steadily.
+  </p>
+  <p>
+    So Backcast checks the best model's forecasts. When it predicted the same direction in at least 90% of the
+    windows and the price moved that way over the period, the headline says so. Below the headline you'll also find
+    how much the price moved over the windows and how many of them it rose in.
+  </p>
+
+  <h2>Limits</h2>
+  <ul>
+    <li>Thirty windows is a small sample. Results can change from one week to the next.</li>
+    <li>Dividends aren't added back, so on the day a stock goes ex-dividend its price drops by roughly the dividend, and no model here forecasts that.</li>
+    <li>Only the price history is used: no volume, fundamentals, news, or other stocks.</li>
+    <li>Errors are measured on prices, not on trading returns. There are no transaction costs or positions.</li>
+    <li>Future dates follow the exchange's holiday calendar for most major exchanges. For the rest, they skip weekends only, and the chart says so.</li>
+  </ul>
+</article>
+{% endblock %}

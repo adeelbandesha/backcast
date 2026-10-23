@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Read-only token, and `pull_request` rather than `pull_request_target`, so PRs from forks run without secrets.
+permissions:
+  contents: read
+
+# A new push to the same branch or PR cancels the run it replaces.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - name: JavaScript syntax
+        run: node --check src/backcast/web/static/backcast/js/app.js && node --check src/backcast/web/static/backcast/js/theme.js
+      - name: requirements.txt matches uv.lock
+        run: |
+          uv export --format requirements-txt --no-dev --no-emit-project --no-hashes --no-header --no-annotate --locked -o requirements.txt
+          git diff --exit-code requirements.txt
+
+  test:
+    runs-on: ubuntu-latest
+    # The backtest uses a process pool; a deadlock should fail the job, not hang it for hours.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run pytest
+      - run: uv run django-admin check --settings=backcast.web.settings
+      - run: uv run backcast --help
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build
+      - name: Wheel includes the web app's templates and static files
+        run: |
+          contents=$(python3 -m zipfile -l dist/*.whl)
+          for file in backcast/web/templates/backcast/base.html backcast/web/templates/404.html \
+                      backcast/web/static/backcast/js/app.js backcast/web/static/backcast/css/app.css \
+                      backcast/web/static/backcast/vendor/plot.umd.min.js; do
+            grep -q "$file" <<< "$contents" || { echo "missing from wheel: $file"; exit 1; }
+          done

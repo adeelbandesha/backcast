@@ -1,0 +1,38 @@
+{% extends "backcast/base.html" %}
+{% load static %}
+
+{% block title %}{{ symbol }} · {{ horizon }}-day backtest · Backcast{% endblock %}
+{% block description %}Can any forecasting model beat the naive forecast for {{ symbol }}, {{ horizon }} trading day{{ horizon|pluralize }} ahead?{% endblock %}
+{% block head %}
+  <script src="{% static 'backcast/vendor/d3.min.js' %}" defer></script>
+  <script src="{% static 'backcast/vendor/plot.umd.min.js' %}" defer></script>
+{% endblock %}
+
+{% block content %}
+<article class="report">
+  <header class="report-head">
+    <h1 class="symbol">{{ symbol }}</h1>
+    <nav class="horizon-tabs" aria-label="Forecast horizon">
+      {% for h in horizons %}
+        <a href="?h={{ h }}"{% if h == horizon %} aria-current="page"{% endif %}>{{ h }} day{{ h|pluralize }}</a>
+      {% endfor %}
+    </nav>
+  </header>
+
+  <div id="results" class="results"{% if not results %} data-src="{{ results_url }}" aria-busy="true"{% endif %}>
+    {% if results %}
+      {% include "backcast/_results.html" %}
+    {% else %}
+      <div class="loading">
+        <p>
+          Running {{ windows }} walk-forward windows for six models.
+          The first run for a symbol takes about ten seconds.
+          <span class="elapsed" aria-hidden="true"></span>
+        </p>
+        <div class="loading-bar" aria-hidden="true"></div>
+        <noscript><p><a href="{{ results_url }}">Show the results</a> (JavaScript is off, so they open on their own page.)</p></noscript>
+      </div>
+    {% endif %}
+  </div>
+</article>
+{% endblock %}

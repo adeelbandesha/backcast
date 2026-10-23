@@ -1,0 +1,36 @@
+{% extends "backcast/base.html" %}
+
+{% block title %}Models · Backcast{% endblock %}
+
+{% block content %}
+<article class="prose">
+  <h1>Models</h1>
+  <p class="lede">
+    Six models, from the benchmark itself to gradient-boosted trees. Each one turns a price history into a forecast
+    path with an {{ level }}% interval, and none of them sees a price after the forecast date.
+  </p>
+
+  <dl class="model-list">
+    {% for model in models %}
+      <div>
+        <dt><span class="model-name">{{ model.name }}</span> <span class="model-family">{{ model.family }}</span></dt>
+        <dd>{{ model.summary }}</dd>
+      </div>
+    {% endfor %}
+  </dl>
+
+  <h2>Adding a model</h2>
+  <p>
+    Subclass <code>Model</code> in <code>backcast/models.py</code>, return a <code>Forecast</code> with the mean path
+    and its interval, and add an instance to <code>MODELS</code>. The backtest, leaderboard and charts pick it up.
+  </p>
+<pre><code>class Mean(Model):
+    key, name, family = "mean", "Historical mean", "Baseline"
+    summary = "Forecasts the average price of the whole history."
+
+    def forecast(self, y, h):
+        mean = np.full(h, y.mean())
+        spread = Z * y.std(ddof=1)
+        return Forecast(mean, mean - spread, mean + spread)</code></pre>
+</article>
+{% endblock %}

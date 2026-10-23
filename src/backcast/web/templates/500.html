@@ -1,0 +1,11 @@
+{% extends "backcast/base.html" %}
+
+{% block title %}Something went wrong · Backcast{% endblock %}
+
+{% block content %}
+<article class="prose">
+  <h1>Something went wrong</h1>
+  <p class="lede">The server hit an error it didn't expect. Try again in a minute.</p>
+  <p><a href="{% url 'home' %}">Go to the start page</a></p>
+</article>
+{% endblock %}

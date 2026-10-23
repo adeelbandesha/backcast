@@ -1,0 +1,63 @@
+{% extends "backcast/base.html" %}
+
+{% block title %}Backcast: can any model beat the naive forecast?{% endblock %}
+{% block masthead_search %}{% endblock %}
+
+{% block content %}
+<section class="intro">
+  <h1>Can any model beat the naive forecast?</h1>
+  <p class="lede">
+    Pick a stock. Backcast replays {{ windows }} stretches of its last five years, asks five models to forecast
+    each one using only the prices before it, and checks whether any of them did better than the simplest
+    guess there is: the price later will be the price now.
+  </p>
+
+  <form class="query" action="{% url 'home' %}" method="get" role="search" novalidate>
+    {% include "backcast/_combobox.html" with field_id="symbol" label="Ticker or company" value=symbol describedby="symbol-error" invalid=error required=True %}
+    <fieldset class="segmented">
+      <legend>Forecast horizon</legend>
+      <div class="segmented-options">
+        {% for h in horizons %}
+          <input type="radio" name="h" value="{{ h }}" id="h-{{ h }}"{% if h == horizon %} checked{% endif %}>
+          <label for="h-{{ h }}">{{ h }} day{{ h|pluralize }}</label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <button class="button button-primary" type="submit">Run backtest</button>
+  </form>
+  <p class="field-error" id="symbol-error" role="alert">{{ error|default:'' }}</p>
+
+  <p class="examples">
+    Or start with
+    {% for example in examples %}<a href="{% url 'backtest' example %}?h={{ horizon }}">{{ example }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}.
+  </p>
+</section>
+
+<section class="steps" aria-labelledby="steps-title">
+  <h2 id="steps-title" class="visually-hidden">How a backtest works</h2>
+  <ol>
+    <li>
+      <h3>Walk forward</h3>
+      <p>
+        The last five years are cut into {{ windows }} back-to-back windows. In each one, every model sees the
+        prices up to a date and forecasts the close 1, 5 or 20 trading days later.
+      </p>
+    </li>
+    <li>
+      <h3>Score only the unseen</h3>
+      <p>
+        Each forecast is checked against a price the model never saw. Nothing is tuned on the test period, so the
+        error is what you would have got at the time.
+      </p>
+    </li>
+    <li>
+      <h3>Test the margin</h3>
+      <p>
+        A model that wins on average can still be lucky. A paired t-test on the per-window errors, corrected for trying
+        several models, says whether the gap over naive is larger than chance would produce.
+      </p>
+    </li>
+  </ol>
+  <p><a href="{% url 'method' %}">Read the full method</a></p>
+</section>
+{% endblock %}

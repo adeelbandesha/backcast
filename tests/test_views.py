@@ -1,0 +1,158 @@
+import json
+import re
+
+import numpy as np
+import pandas as pd
+import pytest
+from django.core.cache import cache
+
+from backcast.data import DataError
+from backcast.evaluate import run_backtest
+from backcast.models import Drift, Naive
+from backcast.web import views
+
+FAST_MODELS = [Naive(), Drift()]
+
+
+@pytest.fixture(autouse=True)
+def memory_cache(settings):
+    settings.CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+    cache.clear()
+
+
+@pytest.fixture
+def prices(monkeypatch):
+    """Fake five years of prices, and a fast backtest with two cheap models. Returns the load_prices call log."""
+    values = 100 * np.exp(np.cumsum(np.random.default_rng(0).normal(0, 0.01, 1250)))
+    calls = []
+
+    def load_prices(symbol):
+        calls.append(symbol)
+        return pd.Series(values, index=pd.bdate_range(end="2026-10-23", periods=len(values)), name=symbol)
+
+    monkeypatch.setattr(views, "load_prices", load_prices)
+    monkeypatch.setattr(views, "run_backtest", lambda p, h: run_backtest(p, h, FAST_MODELS))
+    return calls
+
+
+def chart_data(response) -> dict:
+    payload = re.search(r'<script id="chart-data" type="application/json">(.*?)</script>', response.text, re.S)
+
+    def reject(constant):
+        raise ValueError(f"{constant} is not valid JSON")
+
+    return json.loads(payload.group(1), parse_constant=reject)
+
+
+def test_home(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "Can any model beat the naive forecast?" in response.text
+
+
+def test_home_redirects_to_the_backtest(client):
+    response = client.get("/", {"symbol": " aapl ", "h": "20"})
+    assert response.status_code == 302
+    assert response["Location"] == "/backtest/AAPL/?h=20"
+
+
+def test_home_rejects_an_invalid_symbol(client):
+    response = client.get("/", {"symbol": "$$$"})
+    assert response.status_code == 400
+    assert "is not a valid ticker symbol" in response.text
+
+
+def test_backtest_url_is_canonical(client):
+    response = client.get("/backtest/msft/", {"h": "1"})
+    assert response["Location"] == "/backtest/MSFT/?h=1"
+
+
+def test_backtest_page_fetches_uncached_results(client):
+    response = client.get("/backtest/MSFT/", {"h": "7"})  # unsupported horizons fall back to 5
+    assert response.status_code == 200
+    assert 'data-src="/backtest/MSFT/results/?h=5"' in response.text
+
+
+def test_results_are_rendered_and_cached(client, prices):
+    response = client.get("/backtest/MSFT/results/", {"h": "5"})
+    assert response.status_code == 200
+    assert "Leaderboard" in response.text
+    data = chart_data(response)
+    assert [model["key"] for model in data["models"]] in (["drift", "naive"], ["naive", "drift"])
+    assert len(data["windows"]["drift"]["origin"]) == 30
+    assert len(data["future"]["dates"]) == 5
+    assert len(data["history"]["close"]) == 60
+
+    client.get("/backtest/MSFT/results/", {"h": "5"})
+    page = client.get("/backtest/MSFT/", {"h": "5"})
+    assert prices == ["MSFT"]
+    assert "data-src" not in page.text and "Leaderboard" in page.text  # cached runs render in the page
+
+
+def test_results_show_data_errors(client, monkeypatch):
+    def missing(symbol):
+        raise DataError(f"No price history found for {symbol}.")
+
+    monkeypatch.setattr(views, "load_prices", missing)
+    response = client.get("/backtest/NOPE/results/")
+    assert response.status_code == 422
+    assert "No price history found for NOPE." in response.text
+
+
+def test_results_need_enough_history(client, monkeypatch):
+    short = pd.Series(np.linspace(10, 20, 300), index=pd.bdate_range("2025-01-01", periods=300))
+    monkeypatch.setattr(views, "load_prices", lambda symbol: short)
+    response = client.get("/backtest/NEW/results/")
+    assert response.status_code == 422
+    assert "A backtest needs at least 505." in response.text
+
+
+@pytest.mark.parametrize("query", ["", "   ", "x" * 41])
+def test_search_validates_the_query(client, query):
+    assert client.get("/api/search/", {"q": query}).status_code == 400
+
+
+def test_search_does_not_cache_empty_results(client, monkeypatch):
+    answers = iter([[], [{"symbol": "AAPL", "name": "Apple Inc.", "exchange": "NASDAQ"}]])
+    monkeypatch.setattr(views, "search_symbols", lambda query: next(answers))
+    assert client.get("/api/search/", {"q": "apple"}).json() == {"results": []}
+    assert client.get("/api/search/", {"q": "apple"}).json()["results"][0]["symbol"] == "AAPL"
+
+
+def test_static_pages(client):
+    assert "LightGBM" in client.get("/models/").text
+    assert "t-test" in client.get("/method/").text
+
+
+def test_not_found(client):
+    response = client.get("/no-such-page/")
+    assert response.status_code == 404
+    assert "Page not found" in response.text
+
+
+def test_results_explain_the_period(client, prices):
+    text = client.get("/backtest/MSFT/results/").text
+    assert re.search(r"Over these windows the price moved [+−]\d+% and rose in \d+ of 30\.", text)
+    # The fake prices carry no exchange, so the chart admits its future dates skip weekends only.
+    assert "holiday calendar isn't known" in text
+
+
+def test_new_runs_are_rate_limited(client, prices, settings):
+    settings.BACKCAST_RUNS_PER_HOUR = 2
+    assert client.get("/backtest/AAA/results/").status_code == 200
+    assert client.get("/backtest/BBB/results/").status_code == 200
+    limited = client.get("/backtest/CCC/results/")
+    assert limited.status_code == 429
+    assert "the limit" in limited.text
+    assert client.get("/backtest/AAA/results/").status_code == 200  # cached runs are free
+
+
+def test_forwarded_address_is_only_trusted_when_configured(client, prices, settings):
+    settings.BACKCAST_RUNS_PER_HOUR = 1
+    # Untrusted: a client can't dodge the limit by inventing a header.
+    assert client.get("/backtest/AAA/results/", headers={"X-Forwarded-For": "1.1.1.1"}).status_code == 200
+    assert client.get("/backtest/BBB/results/", headers={"X-Forwarded-For": "2.2.2.2"}).status_code == 429
+    # Trusted: the proxy's last entry identifies the client.
+    settings.BACKCAST_CLIENT_IP_HEADER = "X-Forwarded-For"
+    assert client.get("/backtest/CCC/results/", headers={"X-Forwarded-For": "9.9.9.9, 3.3.3.3"}).status_code == 200
+    assert client.get("/backtest/DDD/results/", headers={"X-Forwarded-For": "9.9.9.9, 4.4.4.4"}).status_code == 200

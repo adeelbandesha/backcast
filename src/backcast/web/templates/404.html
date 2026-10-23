@@ -1,0 +1,11 @@
+{% extends "backcast/base.html" %}
+
+{% block title %}Page not found · Backcast{% endblock %}
+
+{% block content %}
+<article class="prose">
+  <h1>Page not found</h1>
+  <p class="lede">There is nothing at this address. To backtest a stock, search for its ticker or company name.</p>
+  <p><a href="{% url 'home' %}">Go to the start page</a></p>
+</article>
+{% endblock %}

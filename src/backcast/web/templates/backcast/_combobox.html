@@ -1,0 +1,9 @@
+<div class="combobox{% if compact %} combobox-compact{% endif %}" data-combobox data-search-url="{% url 'search' %}">
+  <label for="{{ field_id }}"{% if compact %} class="visually-hidden"{% endif %}>{{ label }}</label>
+  <input id="{{ field_id }}" name="symbol" type="text" value="{{ value|default:'' }}"
+         role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="{{ field_id }}-options"
+         autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40"
+         placeholder="{% if compact %}Ticker or company{% else %}AAPL, Microsoft, SPY…{% endif %}"
+         {% if describedby %}aria-describedby="{{ describedby }}"{% endif %}{% if invalid %} aria-invalid="true"{% endif %}{% if required %} required{% endif %}>
+  <ul id="{{ field_id }}-options" class="combobox-options" role="listbox" aria-label="Matching symbols" hidden></ul>
+</div>

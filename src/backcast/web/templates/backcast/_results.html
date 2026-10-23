@@ -1,0 +1,100 @@
+{% if error %}
+<div class="notice" role="alert">
+  <p>{{ error }}</p>
+  <p><a href="{% url 'home' %}">Try another symbol</a></p>
+</div>
+{% else %}{% with r=results %}
+<section class="verdict" data-outcome="{% if r.verdict.significant %}significant{% elif r.verdict.beaten %}noise{% else %}unbeaten{% endif %}">
+  <h2 class="headline">{{ r.headline }}</h2>
+  {% if r.trend_note %}<p class="trend-note">{{ r.trend_note }}</p>{% endif %}
+  <p class="verdict-meta">
+    {{ r.horizon }}-trading-day forecasts from {{ r.windows }} windows,
+    <time datetime="{{ r.first_origin|date:'Y-m-d' }}">{{ r.first_origin|date:'j M Y' }}</time> to
+    <time datetime="{{ r.last_target|date:'Y-m-d' }}">{{ r.last_target|date:'j M Y' }}</time>.
+    Prices to the close of <time datetime="{{ r.as_of|date:'Y-m-d' }}">{{ r.as_of|date:'j M Y' }}</time>.
+  </p>
+  <p class="verdict-meta">
+    Over these windows the price moved {{ r.period_change }} and rose in {{ r.up_windows }} of {{ r.windows }}.
+  </p>
+</section>
+
+<section class="leaderboard" aria-labelledby="leaderboard-title">
+  <h2 id="leaderboard-title">Leaderboard</h2>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">Model</th>
+          <th scope="col" class="num">Mean error</th>
+          <th scope="col" class="num">vs naive</th>
+          <th scope="col" class="num">Windows won</th>
+          <th scope="col" class="num">Direction right</th>
+          <th scope="col" class="num">In {{ r.level }}% interval</th>
+          <th scope="col" class="num">p-value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in r.rows %}
+          <tr{% if row.key == 'naive' %} class="baseline-row"{% endif %}>
+            <th scope="row">
+              <span class="model-name">{{ row.name }}</span>
+              <span class="model-family">{{ row.family }}{% if row.best %} · best model{% endif %}</span>
+            </th>
+            <td class="num">{{ row.mae }}</td>
+            <td class="num {{ row.tone }}">{{ row.change }}</td>
+            <td class="num">{{ row.win_rate }}</td>
+            <td class="num">{{ row.direction }}</td>
+            <td class="num">{{ row.coverage }}</td>
+            <td class="num">{{ row.p_value }}{% if row.significant %}<span class="significant" title="Significant at the 5% level">*</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <dl class="notes">
+    <div><dt>Mean error</dt><dd>Average absolute gap between forecast and actual close at the horizon, in the stock's currency.</dd></div>
+    <div><dt>vs naive</dt><dd>Mean error relative to the naive forecast. Negative is better.</dd></div>
+    <div><dt>Windows won</dt><dd>Share of the {{ r.windows }} windows where the model was closer than naive.</dd></div>
+    <div><dt>Direction right</dt><dd>How often the forecast moved the same way as the price did.</dd></div>
+    <div><dt>In {{ r.level }}% interval</dt><dd>How often the actual close landed inside the model's {{ r.level }}% interval. Close to {{ r.level }}% is well calibrated.</dd></div>
+    <div><dt>p-value</dt><dd>Paired t-test on per-window errors against naive, adjusted for testing several models at once (Holm). An asterisk marks p below 0.05.</dd></div>
+  </dl>
+</section>
+
+<section class="charts" aria-labelledby="charts-title">
+  <h2 id="charts-title">Forecasts</h2>
+  <fieldset class="segmented model-picker">
+    <legend>Compare with naive</legend>
+    <div class="segmented-options">
+      {% for row in r.rows %}{% if row.key != 'naive' %}
+        <input type="radio" name="model" value="{{ row.key }}" id="model-{{ row.key }}"{% if row.best %} checked{% endif %}>
+        <label for="model-{{ row.key }}">{{ row.name }}</label>
+      {% endif %}{% endfor %}
+    </div>
+  </fieldset>
+
+  <figure class="chart" data-chart="price">
+    <figcaption>
+      <h3>The next {{ r.horizon }} trading day{{ r.horizon|pluralize }}</h3>
+      <p>
+        Recent closes, then each model's forecast from the latest close. The band is the selected model's {{ r.level }}% interval.
+        {% if not r.calendar_known %}This exchange's holiday calendar isn't known, so future dates skip weekends only.{% endif %}
+      </p>
+    </figcaption>
+    <div class="chart-legend" aria-hidden="true"></div>
+    <div class="chart-plot"></div>
+    <details class="chart-data"><summary>Show the data</summary><div class="table-scroll"></div></details>
+  </figure>
+
+  <figure class="chart" data-chart="errors">
+    <figcaption>
+      <h3>Window by window</h3>
+      <p>How much closer the model's forecast was to the actual close than naive's, at the {{ r.horizon }}-day mark. Columns above the line are windows the model won.</p>
+    </figcaption>
+    <div class="chart-legend" aria-hidden="true"></div>
+    <div class="chart-plot"></div>
+    <details class="chart-data"><summary>Show the data</summary><div class="table-scroll"></div></details>
+  </figure>
+</section>
+{{ r.chart|json_script:"chart-data" }}
+{% endwith %}{% endif %}
