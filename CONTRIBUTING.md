@@ -33,6 +33,9 @@ uv export --format requirements-txt --no-dev --no-emit-project --no-hashes --no-
 
 Keep each pull request to one change. A fix with a test that fails without it is the easiest kind to review.
 
+CI doesn't start on its own. The maintainer runs it on your pull request after a first look, so the checks may take
+a little while to appear.
+
 ## Adding a model
 
 The README explains the mechanics: subclass `Model`, return a `Forecast`, add an instance to `MODELS`.

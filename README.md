@@ -194,9 +194,10 @@ uv run ruff check .
 uv run ruff format --check .
 ```
 
-CI runs the same three commands on every pull request. It also checks the JavaScript for syntax errors, runs
-Django's system checks, builds the wheel to make sure the templates and static files are still packaged, and
-makes sure `requirements.txt` still matches `uv.lock`.
+CI runs the same three commands. It also checks the JavaScript for syntax errors, runs Django's system checks,
+builds the wheel to make sure the templates and static files are still packaged, and makes sure `requirements.txt`
+still matches `uv.lock`. CI is started by hand rather than on every push, and a pull request can only be merged once
+it has passed on the pull request's latest commit.
 
 The tests use synthetic price series and never touch the network. They cover the walk-forward split (including a
 model that reports how many prices it was shown, to catch any leakage), the metric arithmetic, the trading

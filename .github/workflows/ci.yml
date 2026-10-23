@@ -1,9 +1,9 @@
 name: CI
 
+# Runs only when started by hand: `gh workflow run ci.yml --ref <branch>`, or "Run workflow" in the Actions tab.
+# main requires lint, test and build to pass on a pull request's latest commit before it can merge.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 # Read-only token, and `pull_request` rather than `pull_request_target`, so PRs from forks run without secrets.
 permissions:
