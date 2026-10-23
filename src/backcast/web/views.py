@@ -11,7 +11,19 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 
 from ..data import DataError, load_prices, normalize_symbol, search_symbols
-from ..evaluate import HORIZONS, MIN_HISTORY, SIGNIFICANCE, WINDOWS, headline, run_backtest, trend_note
+from ..evaluate import (
+    HORIZONS,
+    MIN_HISTORY,
+    MIN_ORIGINS,
+    ORIGINS,
+    REFIT,
+    SIGNIFICANCE,
+    TREND_DAYS,
+    headline,
+    required_prices,
+    run_backtest,
+    trend_note,
+)
 from ..models import LEVEL, MODELS, MODELS_BY_KEY
 
 DEFAULT_HORIZON = 5
@@ -50,7 +62,7 @@ def backtest(request, symbol):
             "symbol": symbol,
             "horizon": horizon,
             "horizons": HORIZONS,
-            "windows": WINDOWS,
+            "origins": ORIGINS,
             "results_url": f"{reverse('backtest-results', args=[symbol])}?h={horizon}",
             # A cached run renders straight away; otherwise the page fetches it.
             "results": cache.get(_results_key(symbol, horizon)),
@@ -78,8 +90,11 @@ def method(request):
         request,
         "backcast/method.html",
         {
-            "windows": WINDOWS,
+            "origins": ORIGINS,
+            "refit": REFIT,
             "min_history": MIN_HISTORY,
+            "min_origins": MIN_ORIGINS,
+            "trend_days": TREND_DAYS,
             "level": LEVEL,
             "significance": SIGNIFICANCE,
         },
@@ -108,7 +123,7 @@ def _home(request, error=None, status=200):
             "horizon": _horizon(request),
             "horizons": HORIZONS,
             "examples": EXAMPLES,
-            "windows": WINDOWS,
+            "origins": ORIGINS,
         },
         status=status,
     )
@@ -132,9 +147,9 @@ def _results(request, symbol, horizon) -> dict:
     if (results := cache.get(key)) is None:
         _count_new_run(request)
         prices = cache.get_or_set(f"prices:{quote(symbol)}", lambda: load_prices(symbol), PRICES_TTL)
-        if len(prices) < MIN_HISTORY + horizon:
+        if len(prices) < required_prices(horizon):
             raise DataError(
-                f"{symbol} has {len(prices)} days of history. A backtest needs at least {MIN_HISTORY + horizon}."
+                f"{symbol} has {len(prices)} days of history. A backtest needs at least {required_prices(horizon)}."
             )
         results = _summarize(run_backtest(prices, horizon))
         cache.set(key, results, RESULTS_TTL)
@@ -142,7 +157,7 @@ def _results(request, symbol, horizon) -> dict:
 
 
 def _count_new_run(request):
-    """An uncached run keeps every core busy for about ten seconds, so each client gets a few per hour."""
+    """An uncached run keeps every core busy for several seconds, so each client gets a few per hour."""
     limit = settings.BACKCAST_RUNS_PER_HOUR
     key = f"runs:{quote(_client_ip(request))}:{int(time.time() // 3600)}"
     cache.add(key, 0, 60 * 60)
@@ -174,9 +189,10 @@ def _summarize(report) -> dict:
             "key": row.model,
             "name": MODELS_BY_KEY[row.model].name,
             "family": MODELS_BY_KEY[row.model].family,
-            "mae": f"{row.mae:,.2f}",
-            "change": "—" if row.model == "naive" else _signed_percent(row.relative_mae - 1),
-            "tone": "" if row.model == "naive" else _tone(row.relative_mae - 1),
+            "mae": f"{row.mae:.2%}",
+            "change": _versus(row.model, row.relative_mae),
+            "crps": _versus(row.model, row.relative_crps),
+            "interval": _versus(row.model, row.relative_interval),
             "win_rate": _percent(row.win_rate),
             "direction": _percent(row.direction),
             "coverage": _percent(row.coverage),
@@ -187,6 +203,18 @@ def _summarize(report) -> dict:
         for row in report.board.itertuples()
     ]
     results = report.results
+    trend_counts = results[results.model == "naive"].uptrend.value_counts()
+    trend = {
+        "days": [int(trend_counts.get(True, 0)), int(trend_counts.get(False, 0))],
+        "rows": [
+            {
+                "name": row["name"],
+                "cells": [_versus(row["key"], report.trend.at[up, row["key"]]) for up in (True, False)],
+            }
+            for row in rows
+            if row["key"] != "naive"
+        ],
+    }
     # Enough history that the forecast fan stays readable: 60 days, or 8 horizons for long ones.
     shown = report.prices.iloc[-max(60, 8 * report.horizon) :]
     chart = {
@@ -201,11 +229,12 @@ def _summarize(report) -> dict:
                 for key, f in report.future.items()
             },
         },
-        "windows": {
+        "origins": {
             key: {
                 "origin": _dates(group.origin),
                 "target": _dates(group.target),
-                **{column: _numbers(group[column]) for column in ("last", "actual", "predicted", "lower", "upper")},
+                **{column: _numbers(group[column]) for column in ("actual", "predicted")},
+                "error": [round(float(v), 6) for v in group.error],
             }
             for key, group in results.groupby("model", sort=False)
         },
@@ -217,13 +246,18 @@ def _summarize(report) -> dict:
         "trend_note": trend_note(verdict),
         "verdict": verdict,
         "rows": rows,
-        "windows": WINDOWS,
+        "trend": trend,
+        "trend_days": TREND_DAYS,
+        "spa_p_value": _p_value(verdict.p_value),
+        "significance": SIGNIFICANCE,
         "level": LEVEL,
         "as_of": report.prices.index[-1].date(),
         "first_origin": results.origin.min().date(),
         "last_target": results.target.max().date(),
         "period_change": _signed_percent(verdict.period_change, digits=0),
-        "up_windows": verdict.up_windows,
+        "origins": verdict.origins,
+        "up_origins": verdict.up_origins,
+        "always_up": _percent(verdict.up_origins / verdict.origins),
         "calendar_known": report.prices.attrs.get("calendar") is not None,
         "chart": chart,
     }
@@ -246,6 +280,13 @@ def _signed_percent(value, digits=1) -> str:
     if round(value, digits + 2) == 0:
         return f"{0:.{digits}%}"
     return f"{value:+.{digits}%}".replace("-", "−")
+
+
+def _versus(key, relative) -> dict:
+    """A model's score relative to naive as a signed change, colored by whether it is better or worse."""
+    if key == "naive" or math.isnan(relative):
+        return {"text": "—", "tone": ""}
+    return {"text": _signed_percent(relative - 1), "tone": _tone(relative - 1)}
 
 
 def _tone(change) -> str:

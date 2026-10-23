@@ -292,8 +292,9 @@ input[aria-invalid="true"] { border-color: var(--worse); }
 .trend-note { margin-top: 16px; max-width: 40rem; font-size: 1.125rem; line-height: 1.5; }
 .verdict-meta { margin-top: 12px; color: var(--ink-2); font-size: 0.9375rem; }
 
-.leaderboard, .charts { margin-top: 64px; }
-.leaderboard h2, .charts > h2 { margin-bottom: 16px; }
+.leaderboard, .trend, .charts { margin-top: 64px; }
+.leaderboard h2, .trend h2, .charts > h2 { margin-bottom: 16px; }
+.section-lede { max-width: 40rem; margin: -4px 0 16px; color: var(--ink-2); font-size: 0.9375rem; }
 
 .table-scroll { overflow-x: auto; }
 .data-table { width: 100%; border-collapse: collapse; font-size: 0.9375rem; font-variant-numeric: tabular-nums; }
@@ -320,6 +321,7 @@ input[aria-invalid="true"] { border-color: var(--worse); }
 .chart { margin: 0; padding-top: 20px; border-top: 1px solid var(--rule-strong); }
 .chart + .chart { margin-top: 56px; }
 .chart figcaption p { margin-top: 4px; max-width: 44rem; color: var(--ink-2); font-size: 0.9375rem; }
+.chart-legend:empty { display: none; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 16px; font-size: 0.8125rem; color: var(--ink-2); }
 .chart-legend span { display: inline-flex; align-items: center; gap: 8px; }
 .chart-plot { position: relative; margin-top: 12px; min-height: 320px; }

@@ -7,7 +7,7 @@
 <section class="intro">
   <h1>Can any model beat the naive forecast?</h1>
   <p class="lede">
-    Pick a stock. Backcast replays {{ windows }} stretches of its last five years, asks five models to forecast
+    Pick a stock. Backcast goes back over its last two years of trading days, asks five models to forecast from
     each one using only the prices before it, and checks whether any of them did better than the simplest
     guess there is: the price later will be the price now.
   </p>
@@ -39,8 +39,8 @@
     <li>
       <h3>Walk forward</h3>
       <p>
-        The last five years are cut into {{ windows }} back-to-back windows. In each one, every model sees the
-        prices up to a date and forecasts the close 1, 5 or 20 trading days later.
+        On each of the last {{ origins }} trading days, every model sees the prices up to that day and forecasts
+        the close 1, 5 or 20 trading days later.
       </p>
     </li>
     <li>
@@ -53,8 +53,8 @@
     <li>
       <h3>Test the margin</h3>
       <p>
-        A model that wins on average can still be lucky. A paired t-test on the per-window errors, corrected for trying
-        several models, says whether the gap over naive is larger than chance would produce.
+        A model that wins on average can still be lucky, and trying five models makes luck likelier. Hansen's SPA
+        test allows for both and says whether the best result beats naive by more than chance would produce.
       </p>
     </li>
   </ol>

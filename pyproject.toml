@@ -23,6 +23,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 dependencies = [
+    "arch>=8.0.0",
     "django>=6.1.2",
     "exchange-calendars>=4.13.2",
     "gunicorn>=26.2.0",

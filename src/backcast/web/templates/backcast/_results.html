@@ -8,13 +8,17 @@
   <h2 class="headline">{{ r.headline }}</h2>
   {% if r.trend_note %}<p class="trend-note">{{ r.trend_note }}</p>{% endif %}
   <p class="verdict-meta">
-    {{ r.horizon }}-trading-day forecasts from {{ r.windows }} windows,
+    {{ r.horizon }}-trading-day forecasts made on each of {{ r.origins }} trading days,
     <time datetime="{{ r.first_origin|date:'Y-m-d' }}">{{ r.first_origin|date:'j M Y' }}</time> to
     <time datetime="{{ r.last_target|date:'Y-m-d' }}">{{ r.last_target|date:'j M Y' }}</time>.
     Prices to the close of <time datetime="{{ r.as_of|date:'Y-m-d' }}">{{ r.as_of|date:'j M Y' }}</time>.
   </p>
   <p class="verdict-meta">
-    Over these windows the price moved {{ r.period_change }} and rose in {{ r.up_windows }} of {{ r.windows }}.
+    Over this period the price moved {{ r.period_change }}. It was higher {{ r.horizon }} day{{ r.horizon|pluralize }}
+    later after {{ r.up_origins }} of the {{ r.origins }} forecasts.
+  </p>
+  <p class="verdict-meta">
+    Chance that the best result among all five models is luck (Hansen's SPA test): p = {{ r.spa_p_value }}.
   </p>
 </section>
 
@@ -27,7 +31,9 @@
           <th scope="col">Model</th>
           <th scope="col" class="num">Mean error</th>
           <th scope="col" class="num">vs naive</th>
-          <th scope="col" class="num">Windows won</th>
+          <th scope="col" class="num">CRPS vs naive</th>
+          <th scope="col" class="num">Interval score vs naive</th>
+          <th scope="col" class="num">Days won</th>
           <th scope="col" class="num">Direction right</th>
           <th scope="col" class="num">In {{ r.level }}% interval</th>
           <th scope="col" class="num">p-value</th>
@@ -41,7 +47,9 @@
               <span class="model-family">{{ row.family }}{% if row.best %} · best model{% endif %}</span>
             </th>
             <td class="num">{{ row.mae }}</td>
-            <td class="num {{ row.tone }}">{{ row.change }}</td>
+            <td class="num {{ row.change.tone }}">{{ row.change.text }}</td>
+            <td class="num {{ row.crps.tone }}">{{ row.crps.text }}</td>
+            <td class="num {{ row.interval.tone }}">{{ row.interval.text }}</td>
             <td class="num">{{ row.win_rate }}</td>
             <td class="num">{{ row.direction }}</td>
             <td class="num">{{ row.coverage }}</td>
@@ -52,13 +60,42 @@
     </table>
   </div>
   <dl class="notes">
-    <div><dt>Mean error</dt><dd>Average absolute gap between forecast and actual close at the horizon, in the stock's currency.</dd></div>
+    <div><dt>Mean error</dt><dd>Average gap between forecast and actual close at the horizon, measured on log prices, so it reads as a percentage at any price level.</dd></div>
     <div><dt>vs naive</dt><dd>Mean error relative to the naive forecast. Negative is better.</dd></div>
-    <div><dt>Windows won</dt><dd>Share of the {{ r.windows }} windows where the model was closer than naive.</dd></div>
-    <div><dt>Direction right</dt><dd>How often the forecast moved the same way as the price did.</dd></div>
+    <div><dt>CRPS vs naive</dt><dd>Scores the whole forecast distribution, not just its centre. Relative to naive; negative is better.</dd></div>
+    <div><dt>Interval score vs naive</dt><dd>Rewards a narrow {{ r.level }}% interval and charges heavily for a close outside it. Relative to naive; negative is better.</dd></div>
+    <div><dt>Days won</dt><dd>Share of the {{ r.origins }} forecasts where the model was closer than naive.</dd></div>
+    <div><dt>Direction right</dt><dd>How often the forecast moved the same way as the price did. Always predicting a rise would have scored {{ r.always_up }}.</dd></div>
     <div><dt>In {{ r.level }}% interval</dt><dd>How often the actual close landed inside the model's {{ r.level }}% interval. Close to {{ r.level }}% is well calibrated.</dd></div>
-    <div><dt>p-value</dt><dd>Paired t-test on per-window errors against naive, adjusted for testing several models at once (Holm). An asterisk marks p below 0.05.</dd></div>
+    <div><dt>p-value</dt><dd>Diebold-Mariano test against naive, allowing for overlapping forecasts and adjusted for testing five models (Holm). An asterisk marks p below {{ r.significance }}.</dd></div>
   </dl>
+</section>
+
+<section class="trend" aria-labelledby="trend-title">
+  <h2 id="trend-title">Up and down markets</h2>
+  <p class="section-lede">
+    Error relative to naive, split by whether the close was above or below its {{ r.trend_days }}-day average on the
+    day of the forecast. An edge that only shows up on one side may just be a bet on the trend.
+  </p>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">Model</th>
+          <th scope="col" class="num">Uptrend<br>{{ r.trend.days.0 }} days</th>
+          <th scope="col" class="num">Downtrend<br>{{ r.trend.days.1 }} days</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in r.trend.rows %}
+          <tr>
+            <th scope="row"><span class="model-name">{{ row.name }}</span></th>
+            {% for cell in row.cells %}<td class="num {{ cell.tone }}">{{ cell.text }}</td>{% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <section class="charts" aria-labelledby="charts-title">
@@ -86,10 +123,14 @@
     <details class="chart-data"><summary>Show the data</summary><div class="table-scroll"></div></details>
   </figure>
 
-  <figure class="chart" data-chart="errors">
+  <figure class="chart" data-chart="cumulative">
     <figcaption>
-      <h3>Window by window</h3>
-      <p>How much closer the model's forecast was to the actual close than naive's, at the {{ r.horizon }}-day mark. Columns above the line are windows the model won.</p>
+      <h3>Running total against naive</h3>
+      <p>
+        Each day adds how much closer the model's {{ r.horizon }}-day forecast was than naive's, in percentage points
+        of error. The line rises while the model is winning and falls while it is losing, so a steady climb is a lasting
+        edge and a jump is one lucky stretch.
+      </p>
     </figcaption>
     <div class="chart-legend" aria-hidden="true"></div>
     <div class="chart-plot"></div>

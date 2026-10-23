@@ -3,7 +3,7 @@ import os
 import sys
 
 from .data import DataError, load_prices, normalize_symbol
-from .evaluate import HORIZONS, WINDOWS, headline, run_backtest, trend_note
+from .evaluate import HORIZONS, headline, run_backtest, trend_note
 from .models import MODELS_BY_KEY
 
 
@@ -36,8 +36,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     board = report.board.assign(model=report.board.model.map(lambda key: MODELS_BY_KEY[key].name))
+    board = board.assign(mae=board.mae * 100).rename(columns={"mae": "mae_pct"})  # log error, read as a percentage
     summary = f"{headline(report.verdict)} {trend_note(report.verdict)}".strip()
-    print(f"\n{prices.name}: {args.horizon}-day forecasts over {WINDOWS} windows\n")
-    print(f"{summary}\n")
+    verdict = report.verdict
+    print(f"\n{prices.name}: {args.horizon}-day forecasts from {verdict.origins} trading days\n")
+    print(f"{summary}\nSPA p-value that no model beats naive: {verdict.p_value:.3f}\n")
     print(board.to_string(index=False, float_format=lambda value: f"{value:.3f}", na_rep="—"), end="\n\n")
     return 0
