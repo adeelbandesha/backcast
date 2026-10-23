@@ -13,7 +13,7 @@ predictions over the real price, the two lines look close, and that gets taken a
 that just copies yesterday's price would look every bit as close. Backcast scores each model against that copy,
 only on prices the model hadn't seen, and then tests whether the difference is bigger than luck.
 
-![Backtest results for AAPL at a 5-day horizon: the verdict, the trend note and the leaderboard](docs/results.png)
+![Backtest results for AAPL at a 5-day horizon: the verdict, the trend note, the SPA p-value and the leaderboard](docs/results.png)
 
 ## How it works
 
@@ -21,25 +21,33 @@ You give it a ticker and a horizon of 1, 5 or 20 trading days. Backcast then:
 
 1. downloads five years of daily closes from Yahoo Finance, adjusted for splits but not for dividends, and leaves
    out today's price if the market hasn't closed yet;
-2. picks 30 forecast dates, counting back from the latest close one horizon at a time so that no two forecasts
-   overlap;
-3. on each of those dates, fits every model to the prices up to that day and forecasts the close `h` trading days
-   later;
-4. compares each forecast with the price that actually came, and scores it.
+2. makes a forecast from every one of the last 504 trading days (about two years), each model seeing only the
+   prices up to that day and forecasting the close `h` trading days later. Models are re-estimated every 20 trading
+   days and keep their parameters in between, while still seeing each new close;
+3. compares each forecast with the price that actually came, on log prices so a 2% miss counts the same at any
+   price level, and scores it.
 
-| Column (CLI name)             | What it measures                                                                                 |
-| ----------------------------- | ------------------------------------------------------------------------------------------------ |
-| Mean error (`mae`)            | Average absolute gap between forecast and actual close at the horizon, in the stock's currency.  |
-| vs naive (`relative_mae`)     | Mean error relative to naive's. The leaderboard is sorted by it, and lower is better.            |
-| Windows won (`win_rate`)      | Share of the 30 windows in which the model was closer than naive.                                |
-| Direction right (`direction`) | How often the forecast moved the same way as the price. Forecasts of no change are left out.     |
-| In 80% interval (`coverage`)  | How often the actual close fell inside the model's 80% interval. Near 80% means well calibrated. |
-| p-value (`p_adjusted`)        | Paired t-test on the per-window errors against naive, adjusted for testing five models at once.  |
+| Column (CLI name)                             | What it measures                                                                         |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Mean error (`mae_pct`)                        | Average absolute gap between the log forecast and the log close. Reads as a percentage.  |
+| vs naive (`relative_mae`)                     | Mean error relative to naive's. The leaderboard is sorted by it, and lower is better.    |
+| CRPS vs naive (`relative_crps`)               | Scores the whole forecast distribution (nine quantiles), relative to naive's.            |
+| Interval score vs naive (`relative_interval`) | Width of the 80% interval plus a heavy charge for every close outside it, vs naive's.    |
+| Days won (`win_rate`)                         | Share of the 504 forecasts in which the model was closer than naive.                     |
+| Direction right (`direction`)                 | How often the forecast moved the same way as the price. Forecasts of no change left out. |
+| In 80% interval (`coverage`)                  | How often the actual close fell inside the model's 80% interval.                         |
+| p-value (`p_adjusted`)                        | Diebold-Mariano test against naive, Holm-adjusted for testing five models.               |
 
-A model only counts as a significant winner when its adjusted p-value is below 0.05. The adjustment (Holm's method)
-matters because every extra model is another chance to get lucky. When the best model won by betting the same
-direction in nearly every window, during a period that happened to trend that way, the verdict says so. The Method
-page in the web app goes through all of this in more detail.
+Forecasts made a day apart share most of their future, so their errors are correlated and a plain t-test finds
+edges that aren't there. In a simulation with no real edge it called 20-day results significant two times out of
+three. The Diebold-Mariano test allows for the overlap and was wrong 5 to 7% of the time at the 5% level.
+
+The headline uses a different test. Picking the best of five models and testing it alone overstates the evidence,
+so the verdict comes from Hansen's test for superior predictive ability (SPA), which bootstraps all five models
+together and asks whether the best of them beats naive by more than luck would. Results are also split by whether
+the stock was above or below its 200-day average on the forecast date, and when the best model won by betting the
+same direction nearly every day of a period that trended that way, the verdict says so. The Method page in the web
+app goes through all of this in more detail.
 
 ## Getting started
 
@@ -58,25 +66,28 @@ pip install -e .
 backcast run SPY --horizon 5
 ```
 
-A run takes about ten seconds; the windows are spread across your CPU cores. This is a real run from 23 October
-2026:
+A run takes 10 to 20 seconds on a four-core laptop; the work is spread across your CPU cores. This is a real run
+from 23 October 2026:
 
 ```
-SPY: 5-day forecasts over 30 windows
+SPY: 5-day forecasts from 504 trading days
 
-LightGBM edged out the naive forecast by 3.7%, but the margin is within the noise.
+Drift edged out the naive forecast by 1.1%, but the margin is within the noise. It predicted a rise on all 504 days while the price rose 32%, so the win says more about this period's trend than about forecasting skill.
+SPA p-value that no model beats naive: 0.244
 
-   model    mae  relative_mae  win_rate  p_value  direction  coverage  p_adjusted
-LightGBM 10.398         0.963     0.467    0.560      0.500     0.733       1.000
-   Theta 10.651         0.987     0.567    0.308      0.567     0.700       1.000
-   Drift 10.675         0.989     0.567    0.600      0.567     0.733       1.000
-   ARIMA 10.774         0.998     0.433    0.928      0.520     0.767       1.000
-   Naive 10.793         1.000         —        —          —     0.733           —
-     ETS 11.030         1.022     0.367    0.155      0.367     0.733       0.777
+   model  mae_pct  relative_mae  relative_crps  relative_interval  win_rate  p_value  direction  coverage  p_adjusted
+   Drift    1.506         0.989          0.993              0.998     0.562    0.173      0.577     0.796       0.694
+   Theta    1.508         0.991          1.008              0.997     0.567    0.053      0.571     0.780       0.265
+   Naive    1.522         1.000          1.000              1.000         —        —          —     0.802           —
+     ETS    1.524         1.001          0.999              0.996     0.514    0.695      0.516     0.798       0.865
+   ARIMA    1.530         1.005          1.005              1.013     0.226    0.288      0.471     0.804       0.865
+LightGBM    1.547         1.016          1.011              0.996     0.496    0.345      0.524     0.718       0.865
 ```
 
-Four models came in slightly ahead of naive, and none by enough to mean anything. LightGBM had the lowest average
-error while winning fewer than half the windows: its wins were bigger than its losses, not more frequent.
+Drift came out on top by predicting a rise every single day while SPY climbed 32%, which is a bet on the trend, not
+a forecast. Theta's raw p-value of 0.053 looks close to something, but it is one of five tries; adjusted for that
+it is 0.265, and the SPA test, which asks whether any of the five beat naive, puts the chance of luck at 24%.
+ARIMA won only 23% of days because it usually settles on a random walk, which ties with naive.
 
 ## The web app
 
@@ -85,11 +96,12 @@ uv run backcast web
 ```
 
 Then open http://127.0.0.1:8000 and search for a company or ticker. Each backtest page has the verdict, the
-leaderboard, a chart of the next few trading days as each model sees them, and a window-by-window chart of where the
-chosen model beat naive and where it didn't. Every chart has a table of the numbers behind it, and there is a dark
+leaderboard, the same comparison split into up and down markets, a chart of the next few trading days as each model
+sees them, and a running total of how far the chosen model has pulled ahead of naive, or fallen behind, over the
+two years. Every chart has a table of the numbers behind it, and there is a dark
 theme.
 
-![The forecast chart and the window-by-window chart for AAPL, comparing Drift with naive](docs/charts.png)
+![The forecast chart and the running total against naive for AAPL, comparing Theta with naive](docs/charts.png)
 
 ## The models
 
@@ -105,9 +117,11 @@ theme.
 ETS, ARIMA and Theta come from [statsforecast](https://github.com/Nixtla/statsforecast).
 
 To add a model, subclass `Model` in `src/backcast/models.py`, implement `forecast(y, h)` so it returns a `Forecast`
-with mean, lower and upper arrays of length `h`, and append an instance to `MODELS`. The CLI, the leaderboard and the
-charts will include it. Windows run in worker processes, so the model has to be picklable. Defining the class at
-module level is enough.
+with a mean path of length `h` and its quantiles from 10% to 90% (an array of shape `(9, h)`), and append an
+instance to `MODELS`. If estimating is slow, implement `fit(y, h)` instead: it returns a function that forecasts
+from any later history with the same estimates, and the backtest calls it between refits. The CLI, the leaderboard
+and the charts will include it. Forecasts run in worker processes, so the model has to be picklable. Defining the
+class at module level is enough.
 
 ## Project layout
 
@@ -158,10 +172,9 @@ that header, since anyone can send it.
 
 Read the results with these in mind:
 
-- 30 windows is a small sample. A model that looks good this week can look average next week, and shifting the
-  windows by a single day can turn a significant win into noise.
-- The windows are one horizon apart, so the 1-day backtest only covers the last 30 trading days. The 20-day one
-  covers roughly the last two and a half years.
+- Two years is one stretch of market history. A result can hold over these two years and not the next two.
+- A stock needs about two and a half years of history before it can be tested: 500 days before the first forecast
+  and at least 100 forecasts after it.
 - Only the price history goes in. There's no volume, no fundamentals, no news.
 - Errors are measured on prices, not on trading returns. A model that beats naive here could still lose money once
   you add costs.
@@ -178,10 +191,7 @@ None of this is investment advice.
 
 What I'm working on next. None of it exists yet.
 
-- Far more forecasts per stock: one from every trading day over the last two years instead of 30, compared with
-  Diebold–Mariano tests that account for the forecasts overlapping. This fixes the small-sample problem above.
-- Hansen's test for superior predictive ability, which answers the question directly: does any model beat naive,
-  once you allow for having tried several?
+- Long backtests as background jobs, with saved results you can link to.
 - The same backtest across the S&P 500, with the results published.
 - A pretrained time-series foundation model (Chronos-Bolt), and a volatility track. Volatility, unlike price, is
   known to be partly predictable, so models there have a much better record against naive.
@@ -198,8 +208,9 @@ CI runs the same three commands on every pull request. It also checks the JavaSc
 Django's system checks, builds the wheel to make sure the templates and static files are still packaged, and
 makes sure `requirements.txt` still matches `uv.lock`.
 
-The tests use synthetic price series and never touch the network. They cover the walk-forward split (including a
-model that reports how many prices it was shown, to catch any leakage), the metric arithmetic, the trading
+The tests use synthetic price series and never touch the network. They cover the walk-forward split (including
+models that report how many prices they were shown and fitted on, to catch any leakage), the refit schedule, the
+metric arithmetic, the false-positive rate of the Diebold-Mariano test on overlapping forecasts, the trading
 calendars, and the views with the price download mocked out.
 
 The backtest pool uses the `forkserver` start method, because forked workers deadlocked on OpenMP state left over

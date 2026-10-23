@@ -17,61 +17,93 @@
     Beating it consistently is rare.
   </p>
 
-  <h2>Walk-forward windows</h2>
+  <h2>Rolling origins</h2>
   <p>
-    Backcast loads five years of daily closes and steps back from the latest one in
-    jumps of <var>h</var> days, placing {{ windows }} forecast origins. The windows do not overlap, so each
-    forecast is scored on a different future price. At every origin each model is fitted on all prices up to that
-    date, with at least {{ min_history }} days of history, and forecasts the close <var>h</var> trading days later.
+    Backcast loads five years of daily closes and makes a forecast from each of the last {{ origins }} trading days,
+    about two years. On each of those days, every model sees all the prices up to and including that close, with at
+    least {{ min_history }} days of history, and forecasts the close <var>h</var> trading days later.
+  </p>
+  <p>
+    Models are re-estimated every {{ refit }} trading days. In between they keep their estimated parameters but
+    still see each new close, the way a model deployed in practice is used. Re-estimating every day was tested on
+    three stocks at all three horizons: it moved each model's error relative to naive by 0.2 percentage points on
+    average, changed none of the verdicts, and took 16 times as long. Re-estimating weekly came no closer to it.
+  </p>
+  <p>
+    An earlier version used 30 non-overlapping windows. Shifting those windows by one day was enough to turn a
+    significant result for one stock into noise, so the sample is now every trading day.
   </p>
   <p>
     The closes are adjusted for stock splits but not for dividends. Dividend adjustment rescales every earlier price
     each time a dividend is paid, so the history would no longer show the prices people actually traded at. While a
     market is open, today's price is left out: it isn't a close until the session ends.
   </p>
-  <p>
-    Because the windows are <var>h</var> days apart, the 1-, 5- and 20-day backtests cover the most recent
-    {% widthratio windows 1 1 %}, {% widthratio windows 1 5 %} and {% widthratio windows 1 20 %} trading days.
-  </p>
 
   <h2>Scoring</h2>
-  <p>Every metric is computed at the horizon endpoint only, on prices the model had not seen.</p>
+  <p>
+    Every metric is computed at the horizon endpoint only, on prices the model had not seen. Errors are measured on
+    log prices: a miss of 2% counts the same whether the stock trades at 20 or at 2,000, so a stock that doubled
+    over the two years doesn't weigh its later days twice as heavily.
+  </p>
   <dl class="definitions">
-    <div><dt>Mean error</dt><dd>The mean absolute error, in the stock's currency.</dd></div>
+    <div><dt>Mean error</dt><dd>The mean absolute difference between the log of the forecast and the log of the actual close. For errors of a few percent it is very close to the percentage error.</dd></div>
     <div><dt>vs naive</dt><dd>The model's mean error divided by naive's, shown as a percentage change. The leaderboard is sorted by it.</dd></div>
-    <div><dt>Windows won</dt><dd>The share of windows in which the model's error was smaller than naive's.</dd></div>
-    <div><dt>Direction right</dt><dd>How often the forecast moved in the same direction as the price. Windows where a model forecast no change at all are left out.</dd></div>
+    <div><dt>CRPS vs naive</dt><dd>
+      The continuous ranked probability score judges the whole forecast distribution. Every model gives nine
+      quantiles, from 10% to 90%, and the score is twice their average pinball loss, which approximates CRPS. For a
+      forecast with no spread at all it equals the absolute error, so it shares the mean error's units. Quantiles
+      beyond 10% and 90% aren't scored.
+    </dd></div>
+    <div><dt>Interval score vs naive</dt><dd>
+      Gneiting and Raftery's score for the {{ level }}% interval: its width, plus five times the distance by which the
+      actual close falls outside it. A narrow interval only pays if it also holds the actual close.
+    </dd></div>
+    <div><dt>Days won</dt><dd>The share of forecasts in which the model's error was smaller than naive's.</dd></div>
+    <div><dt>Direction right</dt><dd>How often the forecast moved in the same direction as the price. Forecasts of no change at all are left out. Most stocks rose more often than they fell over these years, so the results also give the score of always predicting a rise.</dd></div>
     <div><dt>In {{ level }}% interval</dt><dd>How often the actual close fell inside the model's {{ level }}% prediction interval. Well calibrated intervals land near {{ level }}%.</dd></div>
   </dl>
 
   <h2>Is the margin real?</h2>
   <p>
-    For each model, Backcast takes the per-window difference between naive's absolute error and the model's, and
-    runs a two-sided one-sample t-test on those {{ windows }} differences against zero. It's a paired test: both
-    models face the same prices in each window, so a window that was hard for everyone doesn't count against either.
+    Forecasts made on neighbouring days overlap: two 20-day forecasts made a day apart share 19 days of the future,
+    so their errors move together. A plain t-test treats them as independent and finds edges that aren't there. In
+    a simulation with no real edge, it called 20-day results significant two times out of three.
   </p>
   <p>
-    Five models are compared with naive, and every extra comparison is another chance for one of them to look good
-    by luck. The p-values shown are adjusted for that with Holm's method, and a model only counts as a significant
-    winner when its adjusted p-value is below {{ significance }}.
+    For each model, Backcast runs the Diebold-Mariano test on the daily differences between naive's error and the
+    model's. Its variance allows for correlation over <var>h</var> &minus; 1 days, with Harvey, Leybourne and
+    Newbold's small-sample correction. In the same simulation it was wrong 5 to 7% of the time at the 5% level,
+    close to what it should be. Five models are compared with naive, so these p-values are also adjusted with
+    Holm's method.
+  </p>
+  <p>
+    The headline asks a different question: did any of the five models beat naive? Picking the best of five and
+    testing it alone overstates the evidence, because the best of five is the one most likely to have been lucky.
+    Hansen's test for superior predictive ability (SPA) answers the question directly. It bootstraps the daily
+    error differences of all the models together, resampling runs of neighbouring days so the overlap is kept, and
+    asks how often the best model would look this good if none of them were better than naive. The headline calls
+    a result significant only when that p-value is below {{ significance }}.
   </p>
 
   <h2>Trends</h2>
   <p>
-    A significant result only means the model did better over these particular windows. Some models forecast the
-    same direction almost every time: Drift, for one, always predicts the stock's long-run average move. In a
-    period when the price keeps rising, a model like that beats naive window after window without forecasting
-    anything. In a falling market it would lose just as steadily.
+    A significant result only means the model did better over this particular period. Some models forecast the
+    same direction almost every time: Drift, for one, always predicts the stock's long-run average move. While a
+    price keeps rising, a model like that beats naive day after day without forecasting anything. In a falling
+    market it would lose just as steadily.
   </p>
   <p>
-    So Backcast checks the best model's forecasts. When it predicted the same direction in at least 90% of the
-    windows and the price moved that way over the period, the headline says so. Below the headline you'll also find
-    how much the price moved over the windows and how many of them it rose in.
+    So the results split every model's error by the market it forecast in: days when the close was above its
+    {{ trend_days }}-day average, and days when it was below. That is known on the day of the forecast, so the split
+    shows whether an edge held in both kinds of market, not whether a model happened to guess the direction that
+    came next. And when the best model predicted the same direction on at least 90% of days and the price moved
+    that way over the period, the headline says so.
   </p>
 
   <h2>Limits</h2>
   <ul>
-    <li>Thirty windows is a small sample. Results can change from one week to the next.</li>
+    <li>Two years is still one stretch of market history. A result can hold over these two years and not the next two.</li>
+    <li>A backtest needs at least {{ min_history }} days of history before the first forecast and {{ min_origins }} forecasts after it, so recently listed stocks can't be tested.</li>
     <li>Dividends aren't added back, so on the day a stock goes ex-dividend its price drops by roughly the dividend, and no model here forecasts that.</li>
     <li>Only the price history is used: no volume, fundamentals, news, or other stocks.</li>
     <li>Errors are measured on prices, not on trading returns. There are no transaction costs or positions.</li>

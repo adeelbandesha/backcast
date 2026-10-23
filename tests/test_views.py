@@ -79,7 +79,8 @@ def test_results_are_rendered_and_cached(client, prices):
     assert "Leaderboard" in response.text
     data = chart_data(response)
     assert [model["key"] for model in data["models"]] in (["drift", "naive"], ["naive", "drift"])
-    assert len(data["windows"]["drift"]["origin"]) == 30
+    assert len(data["origins"]["drift"]["origin"]) == 504
+    assert "Up and down markets" in response.text
     assert len(data["future"]["dates"]) == 5
     assert len(data["history"]["close"]) == 60
 
@@ -104,7 +105,7 @@ def test_results_need_enough_history(client, monkeypatch):
     monkeypatch.setattr(views, "load_prices", lambda symbol: short)
     response = client.get("/backtest/NEW/results/")
     assert response.status_code == 422
-    assert "A backtest needs at least 505." in response.text
+    assert "A backtest needs at least 604." in response.text
 
 
 @pytest.mark.parametrize("query", ["", "   ", "x" * 41])
@@ -121,7 +122,7 @@ def test_search_does_not_cache_empty_results(client, monkeypatch):
 
 def test_static_pages(client):
     assert "LightGBM" in client.get("/models/").text
-    assert "t-test" in client.get("/method/").text
+    assert "Diebold-Mariano" in client.get("/method/").text
 
 
 def test_not_found(client):
@@ -132,7 +133,10 @@ def test_not_found(client):
 
 def test_results_explain_the_period(client, prices):
     text = client.get("/backtest/MSFT/results/").text
-    assert re.search(r"Over these windows the price moved [+−]\d+% and rose in \d+ of 30\.", text)
+    assert re.search(
+        r"Over this period the price moved [+−]\d+%\. It was higher 5 days\s+later after \d+ of the 504", text
+    )
+    assert re.search(r"Hansen's SPA test\): p = (0\.\d{3}|&lt; 0\.001)\.", text)
     # The fake prices carry no exchange, so the chart admits its future dates skip weekends only.
     assert "holiday calendar isn't known" in text
 

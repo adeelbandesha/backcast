@@ -187,8 +187,8 @@ async function loadResults(box, loadingMarkup) {
 const parseDate = window.d3?.utcParse("%Y-%m-%d");
 const formatDate = window.d3?.utcFormat("%-d %b %Y");
 const formatPrice = window.d3?.format(",.2f");
-const formatChange = window.d3?.format("+,.2f");
-const formatSigned = (value) => formatChange(value).replace("-", "\u2212");
+const formatPoints = (value) => window.d3.format("+,.1f")(value).replace("-", "\u2212");
+const formatError = window.d3?.format(".2%");
 
 function tokens() {
   const style = getComputedStyle(root);
@@ -216,7 +216,7 @@ function initCharts() {
     const key = picker.querySelector("input:checked")?.value ?? data.best;
     const t = tokens();
     drawPrice(charts.querySelector('[data-chart="price"]'), data, key, names[key], t);
-    drawErrors(charts.querySelector('[data-chart="errors"]'), data, key, names[key], t);
+    drawCumulative(charts.querySelector('[data-chart="cumulative"]'), data, key, names[key], t);
   };
   picker.addEventListener("change", draw);
   document.addEventListener("backcast:theme", draw);
@@ -407,83 +407,64 @@ function drawPrice(figure, data, key, name, t) {
   );
 }
 
-function drawErrors(figure, data, key, name, t) {
+// Welch and Goyal's cumulative error difference: rises while the model beats naive, falls while it loses.
+function drawCumulative(figure, data, key, name, t) {
   const plotNode = figure.querySelector(".chart-plot");
-  const windows = data.windows[key];
-  const naive = data.windows.naive;
-  const rows = windows.target.map((target, i) => ({
-    window: i + 1,
-    origin: parseDate(windows.origin[i]),
-    date: parseDate(target),
-    actual: windows.actual[i],
-    predicted: windows.predicted[i],
-    naivePredicted: naive.predicted[i],
-    model: Math.abs(windows.actual[i] - windows.predicted[i]),
-    naive: Math.abs(naive.actual[i] - naive.predicted[i]),
-  }));
-  for (const row of rows) row.gain = row.naive - row.model;
-  const tone = (row) => (row.gain > 0 ? t.better : row.gain < 0 ? t.worse : t.muted);
+  const series = data.origins[key];
+  const naive = data.origins.naive;
+  let total = 0;
+  const rows = series.origin.map((origin, i) => {
+    const gain = 100 * (naive.error[i] - series.error[i]); // log errors, in percentage points
+    total += gain;
+    return {
+      date: parseDate(origin),
+      target: parseDate(series.target[i]),
+      actual: series.actual[i],
+      predicted: series.predicted[i],
+      naivePredicted: naive.predicted[i],
+      model: series.error[i],
+      naive: naive.error[i],
+      gain,
+      total,
+    };
+  });
 
   const options = baseOptions(plotNode, t, 300);
-  // Columns never wider than 24px: the band's leftover is padding.
-  const slot = (options.width - options.marginLeft - options.marginRight) / rows.length;
-  const tickEvery = Math.ceil(rows.length / Math.max(2, Math.floor(options.width / 110)));
   const chart = Plot.plot({
     ...options,
-    x: { type: "band", label: null, padding: Math.max(0.15, 1 - 24 / slot) },
-    y: { label: null, nice: true },
+    y: { label: null, nice: true, tickFormat: formatPoints },
     marks: [
-      Plot.gridY({ stroke: t.rule, strokeOpacity: 1 }),
-      Plot.axisY({ tickSize: 0, tickPadding: 8, label: null }),
-      Plot.axisX({
-        tickSize: 0,
-        tickPadding: 10,
-        label: null,
-        ticks: rows.filter((row) => (row.window - 1) % tickEvery === 0).map((row) => row.window),
-        tickFormat: (window) => d3.utcFormat("%-d %b")(rows[window - 1].date),
-      }),
-      // Rounded at the data end only, square at the zero line.
-      Plot.barY(rows.filter((row) => row.gain >= 0), { x: "window", y: "gain", fill: tone, ry1: 4 }),
-      Plot.barY(rows.filter((row) => row.gain < 0), { x: "window", y: "gain", fill: tone, ry2: 4 }),
+      ...axes(t, options.width),
       Plot.ruleY([0], { stroke: t.ruleStrong }),
+      Plot.lineY(rows, { x: "date", y: "total", stroke: t.accent, strokeWidth: 2 }),
     ],
   });
-  chart.setAttribute("aria-label", `How much closer ${name} was than naive in each of ${rows.length} windows`);
+  chart.setAttribute("aria-label", `Running total of how much closer ${name} was than naive over ${rows.length} days`);
   plotNode.replaceChildren(chart);
 
-  hover(
-    plotNode,
-    chart,
-    rows,
-    t,
-    (row) => ({
-      title: `Window ${row.window}: ${formatDate(row.origin)} to ${formatDate(row.date)}`,
-      items: [
-        { kind: "line", color: tone(row), value: null, text: formatSigned(row.gain), label: row.gain >= 0 ? "Closer than naive" : "Further than naive" },
-        { kind: "line", color: t.accent, value: null, text: formatPrice(row.model), label: `${name} error` },
-        { kind: "line", color: t.muted, value: null, text: formatPrice(row.naive), label: "Naive error" },
-      ],
-    }),
-    "window",
-  );
+  hover(plotNode, chart, rows, t, (row) => ({
+    title: `Forecast on ${formatDate(row.date)} for ${formatDate(row.target)}`,
+    items: [
+      { kind: "line", color: t.accent, value: row.total, text: formatPoints(row.total), label: "Running total" },
+      { kind: "line", color: row.gain >= 0 ? t.better : t.worse, value: null, text: formatPoints(row.gain), label: row.gain >= 0 ? "Closer than naive" : "Further than naive" },
+      { kind: "line", color: t.accent, value: null, text: formatError(row.model), label: `${name} error` },
+      { kind: "line", color: t.muted, value: null, text: formatError(row.naive), label: "Naive error" },
+    ],
+  }));
 
-  legend(figure, [
-    ["rect", t.better, `${name} closer than naive`],
-    ["rect", t.worse, `${name} further than naive`],
-  ]);
+  legend(figure, []);
   dataTable(
     figure,
-    ["Window", "From", "To", "Actual", `${name} forecast`, "Naive forecast", `${name} error`, "Naive error", "Closer by"],
+    ["Forecast on", "Scored on", "Actual", `${name} forecast`, "Naive forecast", `${name} error`, "Naive error", "Running total"],
     rows.map((row) => [
-      String(row.window),
-      formatDate(row.origin),
       formatDate(row.date),
+      formatDate(row.target),
       formatPrice(row.actual),
       formatPrice(row.predicted),
       formatPrice(row.naivePredicted),
-      formatPrice(row.model),
-      formatPrice(row.naive),
-      formatSigned(row.gain),
+      formatError(row.model),
+      formatError(row.naive),
+      formatPoints(row.total),
     ]),
   );
 }

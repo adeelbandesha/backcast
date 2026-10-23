@@ -1,9 +1,11 @@
 """Forecasting models.
 
-Every model turns a price history into an h-step forecast path with an 80% interval.
-To add one, subclass `Model`, implement `forecast`, and append an instance to `MODELS`.
+Every model turns a price history into an h-step forecast path with quantiles from 10% to 90%; the outer pair is the
+80% interval. To add one, subclass `Model`, implement `forecast` (or `fit`, if estimating is slow), and append an
+instance to `MODELS`.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 
@@ -14,24 +16,39 @@ from scipy.stats import norm
 from statsforecast.models import AutoARIMA, AutoETS, AutoTheta
 
 LEVEL = 80
-Z = norm.ppf(0.5 + LEVEL / 200)
+QUANTILES = np.linspace(0.1, 0.9, 9)
+Z = norm.ppf(QUANTILES)[:, None]  # standard normal quantiles, one row per forecast quantile
 
 
 @dataclass(frozen=True)
 class Forecast:
-    mean: np.ndarray
-    lower: np.ndarray
-    upper: np.ndarray
+    mean: np.ndarray  # shape (h,)
+    quantiles: np.ndarray  # shape (len(QUANTILES), h)
+
+    @property
+    def lower(self) -> np.ndarray:
+        return self.quantiles[0]
+
+    @property
+    def upper(self) -> np.ndarray:
+        return self.quantiles[-1]
 
 
 class Model:
+    """Subclasses implement `forecast`, or `fit` when estimating is slow enough to be worth reusing."""
+
     key: str
     name: str
     family: str
     summary: str
 
     def forecast(self, y: np.ndarray, h: int) -> Forecast:
-        raise NotImplementedError
+        return self.fit(y, h)(y)
+
+    def fit(self, y: np.ndarray, h: int) -> Callable[[np.ndarray], Forecast]:
+        """Estimate on `y` and return a forecaster for any later history (one that extends `y`) that keeps those
+        estimates. The default re-estimates every time, which is right for models that cost nothing to fit."""
+        return lambda latest: self.forecast(latest, h)
 
 
 class Naive(Model):
@@ -41,8 +58,7 @@ class Naive(Model):
     def forecast(self, y, h):
         steps = np.arange(1, h + 1)
         mean = np.full(h, y[-1])
-        spread = Z * np.diff(y).std(ddof=1) * np.sqrt(steps)
-        return Forecast(mean, mean - spread, mean + spread)
+        return Forecast(mean, mean + Z * np.diff(y).std(ddof=1) * np.sqrt(steps))
 
 
 class Drift(Model):
@@ -53,35 +69,43 @@ class Drift(Model):
         steps = np.arange(1, h + 1)
         diffs = np.diff(y)
         mean = y[-1] + diffs.mean() * steps
-        spread = Z * diffs.std(ddof=1) * np.sqrt(steps * (1 + steps / len(diffs)))
-        return Forecast(mean, mean - spread, mean + spread)
+        return Forecast(mean, mean + Z * diffs.std(ddof=1) * np.sqrt(steps * (1 + steps / len(diffs))))
 
 
 class StatsForecastModel(Model):
     family = "Statistical"
+    # statsforecast returns symmetric intervals: the 20% one spans the 40% and 60% quantiles, and so on.
+    levels = [round(200 * q - 100) for q in QUANTILES if q > 0.5]
+    columns = [f"lo-{level}" for level in reversed(levels)] + ["mean"] + [f"hi-{level}" for level in levels]
 
     def __init__(self, key, name, summary, build):
         self.key, self.name, self.summary, self._build = key, name, summary, build
 
-    def forecast(self, y, h):
-        result = self._build().forecast(y=y.astype(float), h=h, level=[LEVEL])
-        mean, lower, upper = (np.asarray(result[k], dtype=float) for k in ("mean", f"lo-{LEVEL}", f"hi-{LEVEL}"))
-        return Forecast(mean, lower, upper)
+    def fit(self, y, h):
+        model = self._build().fit(y=y.astype(float))
+
+        def forecast(latest):
+            # `forward` runs the fitted parameters over the longer history without estimating them again.
+            result = model.forward(y=latest.astype(float), h=h, level=self.levels)
+            quantiles = np.array([np.asarray(result[column], dtype=float) for column in self.columns])
+            return Forecast(np.asarray(result["mean"], dtype=float), quantiles)
+
+        return forecast
 
 
 class GradientBoosting(Model):
     key, name, family = "lightgbm", "LightGBM", "Machine learning"
     summary = (
         "Gradient-boosted trees that read the last 20 daily returns and predict the return over the next h days, "
-        "with quantile regression for the interval. The path between today and day h is interpolated."
+        "one quantile regression per forecast quantile. The path between today and day h is interpolated."
     )
     lags = 20
 
-    def forecast(self, y, h):
+    def fit(self, y, h):
         log_y = np.log(y)
         n = len(log_y)
         windows = sliding_window_view(np.diff(log_y), self.lags)  # row k holds the returns ending at day k + lags
-        features, latest = windows[: n - h - self.lags], windows[-1:]
+        features = windows[: n - h - self.lags]
         target = log_y[self.lags + h :] - log_y[self.lags : n - h]
         params = {
             "objective": "quantile",
@@ -92,13 +116,18 @@ class GradientBoosting(Model):
             "num_threads": 1,  # parallelism comes from the backtest worker pool
             "verbose": -1,
         }
-        returns = sorted(
-            lgb.train({**params, "alpha": alpha}, lgb.Dataset(features, target), num_boost_round=100).predict(latest)[0]
-            for alpha in (0.1, 0.5, 0.9)
-        )
+        boosters = [
+            lgb.train({**params, "alpha": q}, lgb.Dataset(features, target), num_boost_round=100) for q in QUANTILES
+        ]
         fraction = np.arange(1, h + 1) / h
-        lower, mid, upper = (y[-1] * np.exp(r * fraction) for r in returns)
-        return Forecast(mid, lower, upper)
+
+        def forecast(latest):
+            x = np.diff(np.log(latest[-self.lags - 1 :]))[None]
+            returns = np.sort([booster.predict(x)[0] for booster in boosters])  # separate fits can cross; sort them
+            quantiles = latest[-1] * np.exp(np.outer(returns, fraction))
+            return Forecast(quantiles[len(QUANTILES) // 2], quantiles)
+
+        return forecast
 
 
 MODELS: list[Model] = [

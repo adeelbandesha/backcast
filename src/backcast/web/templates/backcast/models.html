@@ -22,7 +22,9 @@
   <h2>Adding a model</h2>
   <p>
     Subclass <code>Model</code> in <code>backcast/models.py</code>, return a <code>Forecast</code> with the mean path
-    and its interval, and add an instance to <code>MODELS</code>. The backtest, leaderboard and charts pick it up.
+    and its quantiles from 10% to 90%, and add an instance to <code>MODELS</code>. The backtest, leaderboard and
+    charts pick it up. A model that is slow to estimate can implement <code>fit</code> instead, which returns a
+    forecaster that keeps its estimates between refits.
   </p>
 <pre><code>class Mean(Model):
     key, name, family = "mean", "Historical mean", "Baseline"
@@ -30,7 +32,6 @@
 
     def forecast(self, y, h):
         mean = np.full(h, y.mean())
-        spread = Z * y.std(ddof=1)
-        return Forecast(mean, mean - spread, mean + spread)</code></pre>
+        return Forecast(mean, mean + Z * y.std(ddof=1))  # Z: normal quantiles, one row per forecast quantile</code></pre>
 </article>
 {% endblock %}
