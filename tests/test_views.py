@@ -160,3 +160,11 @@ def test_forwarded_address_is_only_trusted_when_configured(client, prices, setti
     settings.BACKCAST_CLIENT_IP_HEADER = "X-Forwarded-For"
     assert client.get("/backtest/CCC/results/", headers={"X-Forwarded-For": "9.9.9.9, 3.3.3.3"}).status_code == 200
     assert client.get("/backtest/DDD/results/", headers={"X-Forwarded-For": "9.9.9.9, 4.4.4.4"}).status_code == 200
+
+
+def test_each_price_source_keeps_its_own_results(client, prices, monkeypatch):
+    client.get("/backtest/MSFT/results/")
+    monkeypatch.setenv("BACKCAST_PRICE_SOURCE", "csv")
+    client.get("/backtest/MSFT/results/")
+    assert prices == ["MSFT", "MSFT"]
+    assert "Daily closes from local CSV files." in client.get("/").text

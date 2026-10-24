@@ -19,8 +19,8 @@ only on prices the model hadn't seen, and then tests whether the difference is b
 
 You give it a ticker and a horizon of 1, 5 or 20 trading days. Backcast then:
 
-1. downloads five years of daily closes from Yahoo Finance, adjusted for splits but not for dividends, and leaves
-   out today's price if the market hasn't closed yet;
+1. downloads five years of daily closes from Yahoo Finance (or [another source](#price-data)), adjusted for splits
+   but not for dividends, and leaves out today's price if the market hasn't closed yet;
 2. makes a forecast from every one of the last 504 trading days (about two years), each model seeing only the
    prices up to that day and forecasting the close `h` trading days later. Models are re-estimated every 20 trading
    days and keep their parameters in between, while still seeing each new close;
@@ -131,16 +131,42 @@ from any later history with the same estimates, and the backtest calls it betwee
 and the charts will include it. Forecasts run in worker processes, so the model has to be picklable. Defining the
 class at module level is enough.
 
+## Price data
+
+Prices come from Yahoo Finance by default, with no account or key needed. `BACKCAST_PRICE_SOURCE` switches the
+command line and the web app to another source:
+
+```bash
+BACKCAST_PRICE_SOURCE=csv BACKCAST_CSV_DIR=~/prices uv run backcast run AAPL
+BACKCAST_PRICE_SOURCE=mysources.feed uv run backcast web
+```
+
+**CSV files.** One file per symbol, named after it (`AAPL.csv`), with a `Date` and a `Close` column. Other columns are
+ignored, so a standard export works as it is. Use closes adjusted for splits but not for dividends, and never an
+Adj Close column. Set `BACKCAST_CSV_CALENDAR` to an [exchange_calendars](https://github.com/gerrymanoim/exchange_calendars)
+code such as `XNYS` and future dates skip that exchange's holidays; otherwise they skip weekends only.
+
+**Your own provider.** Any importable module that defines `load_prices(symbol, years)`, returning a pandas Series of
+closes indexed by date, split-adjusted and not dividend-adjusted, finished trading days only. Set
+`close.attrs["calendar"]` if you know the exchange. Raise `backcast.data.DataError` with a readable message when a
+symbol can't be loaded. Two optional names: `search_symbols(query, limit)`, returning dicts with `symbol`, `name` and
+`exchange` for the web app's search box, and `ATTRIBUTION`, a sentence for the footer.
+
+Whatever the source, Backcast checks the prices before a backtest sees them: one positive close per date, sorted,
+trimmed to the same five years. Problems are reported with the date they occur on. A source that can't be imported
+stops the command line with an explanation and stops the web app at startup.
+
 ## Project layout
 
 ```
 src/backcast/
-  data.py        prices from Yahoo Finance, trading calendars, symbol search
+  data.py        loads and checks prices from the configured source; trading calendars
+  sources/       the built-in price sources: Yahoo Finance and CSV files
   models.py      the forecasting models
   evaluate.py    walk-forward backtest, metrics, significance tests, the verdict
   cli.py         the backcast command
   web/           Django app: views, templates, CSS, and the charts (Observable Plot)
-tests/           engine, data and view tests; none of them touch the network
+tests/           engine, data, price source and view tests; none of them touch the network
 scripts/         refit_check.py, the experiment behind the refit interval
 ```
 
@@ -164,8 +190,11 @@ Settings come from environment variables:
 | `BACKCAST_RUNS_PER_HOUR`    | `30`                             | New backtests one visitor may start per hour.            |
 | `BACKCAST_CLIENT_IP_HEADER` | unset                            | Header your reverse proxy puts the visitor's address in. |
 | `BACKCAST_LOG_LEVEL`        | `INFO`                           |                                                          |
+| `BACKCAST_PRICE_SOURCE`     | `yahoo`                          | `yahoo`, `csv`, or your own module. See Price data.      |
+| `BACKCAST_CSV_DIR`          | unset                            | The folder of price files for the `csv` source.          |
+| `BACKCAST_CSV_CALENDAR`     | unset                            | Trading calendar for CSV prices, such as `XNYS`.         |
 
-Results are cached on disk for six hours per symbol and horizon, and every Gunicorn worker reads the same cache.
+Results are cached on disk for six hours per symbol, horizon and price source, and every Gunicorn worker reads the same cache.
 WhiteNoise serves the static files directly from the package, so `collectstatic` is optional.
 
 Each worker starts its own pool of processes, one per core, the first time it runs a backtest. On a small machine,
@@ -191,8 +220,8 @@ Read the results with these in mind:
   of the models forecast that.
 - Future dates follow the exchange's holiday calendar for most major exchanges. For the rest, they skip weekends
   only.
-- Prices come through [yfinance](https://github.com/ranaroussi/yfinance), an unofficial Yahoo Finance client. Yahoo's
-  terms apply to the data.
+- By default, prices come through [yfinance](https://github.com/ranaroussi/yfinance), an unofficial Yahoo Finance
+  client, and Yahoo's terms apply to the data.
 
 None of this is investment advice.
 
@@ -224,7 +253,7 @@ makes sure `requirements.txt` still matches `uv.lock`.
 The tests use synthetic price series and never touch the network. They cover the walk-forward split (including
 models that report how many prices they were shown and fitted on, to catch any leakage), the refit schedule, the
 metric arithmetic, the false-positive rate of the Diebold-Mariano test on overlapping forecasts, the trading
-calendars, and the views with the price download mocked out.
+calendars, the price source checks and the CSV source, and the views with the price download mocked out.
 
 The backtest pool uses the `forkserver` start method, because forked workers deadlocked on OpenMP state left over
 from the parent. As a result, a script that calls `walk_forward` has to live in a real file and keep its top-level

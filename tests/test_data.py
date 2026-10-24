@@ -3,7 +3,8 @@ import pickle
 import pandas as pd
 import pytest
 
-from backcast.data import DataError, calendar_for, drop_unfinished_day, normalize_symbol, trading_days_after
+from backcast.data import DataError, normalize_symbol, trading_days_after
+from backcast.sources.yahoo import calendar_for, drop_unfinished_day
 
 NEW_YORK = {
     "exchangeTimezoneName": "America/New_York",

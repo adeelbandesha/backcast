@@ -10,7 +10,7 @@ from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 
-from ..data import DataError, load_prices, normalize_symbol, search_symbols
+from ..data import DataError, load_prices, normalize_symbol, search_symbols, source_name
 from ..evaluate import (
     HORIZONS,
     MIN_HISTORY,
@@ -108,7 +108,7 @@ def search(request):
     query = request.GET.get("q", "").strip()
     if not 1 <= len(query) <= 40:
         return JsonResponse({"error": "q must be 1 to 40 characters."}, status=400)
-    key = f"search:{quote(query.lower())}"
+    key = f"search:{source_name()}:{quote(query.lower())}"
     if (results := cache.get(key)) is None:
         results = search_symbols(query)
         if results:  # an empty list may be a provider hiccup, so don't keep it
@@ -142,14 +142,14 @@ def _backtest_url(symbol, horizon):
 
 
 def _results_key(symbol, horizon):
-    return f"results:v{RESULTS_VERSION}:{quote(symbol)}:{horizon}"
+    return f"results:v{RESULTS_VERSION}:{source_name()}:{quote(symbol)}:{horizon}"
 
 
 def _results(request, symbol, horizon) -> dict:
     key = _results_key(symbol, horizon)
     if (results := cache.get(key)) is None:
         _count_new_run(request)
-        prices = cache.get_or_set(f"prices:{quote(symbol)}", lambda: load_prices(symbol), PRICES_TTL)
+        prices = cache.get_or_set(f"prices:{source_name()}:{quote(symbol)}", lambda: load_prices(symbol), PRICES_TTL)
         if len(prices) < required_prices(horizon):
             raise DataError(
                 f"{symbol} has {len(prices)} days of history. A backtest needs at least {required_prices(horizon)}."
