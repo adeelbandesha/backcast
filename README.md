@@ -33,7 +33,7 @@ You give it a ticker and a horizon of 1, 5 or 20 trading days. Backcast then:
 | vs naive (`relative_mae`)                     | Mean error relative to naive's. The leaderboard is sorted by it, and lower is better.    |
 | CRPS vs naive (`relative_crps`)               | Scores the whole forecast distribution (nine quantiles), relative to naive's.            |
 | Interval score vs naive (`relative_interval`) | Width of the 80% interval plus a heavy charge for every close outside it, vs naive's.    |
-| Days won (`win_rate`)                         | Share of the 504 forecasts in which the model was closer than naive.                     |
+| Days won (`win_rate`, `tie_rate`)             | Share of the 504 forecasts in which the model was closer than naive, and share tied.     |
 | Direction right (`direction`)                 | How often the forecast moved the same way as the price. Forecasts of no change left out. |
 | In 80% interval (`coverage`)                  | How often the actual close fell inside the model's 80% interval.                         |
 | p-value (`p_adjusted`)                        | Diebold-Mariano test against naive, Holm-adjusted for testing five models.               |
@@ -72,22 +72,27 @@ from 23 October 2026:
 ```
 SPY: 5-day forecasts from 504 trading days
 
-Drift edged out the naive forecast by 1.1%, but the margin is within the noise. It predicted a rise on all 504 days while the price rose 32%, so the win says more about this period's trend than about forecasting skill.
-SPA p-value that no model beats naive: 0.244
+Drift edged out the naive forecast by 1.2%, but the margin is within the noise. It predicted a rise on all 504 days while the price rose 30%, so the win says more about this period's trend than about forecasting skill.
+SPA p-value that no model beats naive: 0.268
 
-   model  mae_pct  relative_mae  relative_crps  relative_interval  win_rate  p_value  direction  coverage  p_adjusted
-   Drift    1.506         0.989          0.993              0.998     0.562    0.173      0.577     0.796       0.694
-   Theta    1.508         0.991          1.008              0.997     0.567    0.053      0.571     0.780       0.265
-   Naive    1.522         1.000          1.000              1.000         —        —          —     0.802           —
-     ETS    1.524         1.001          0.999              0.996     0.514    0.695      0.516     0.798       0.865
-   ARIMA    1.530         1.005          1.005              1.013     0.226    0.288      0.471     0.804       0.865
-LightGBM    1.547         1.016          1.011              0.996     0.496    0.345      0.524     0.718       0.865
+   model  mae_pct  relative_mae  relative_crps  relative_interval  win_rate  tie_rate  p_value  direction  coverage  p_adjusted
+   Drift    1.504         0.988          0.995              0.996     0.560     0.000    0.231      0.575     0.895       0.925
+   Theta    1.506         0.990          1.005              0.983     0.563     0.000    0.126      0.575     0.889       0.630
+   Naive    1.521         1.000          1.000              1.000         —         —        —          —     0.899           —
+     ETS    1.522         1.000          1.000              1.001     0.522     0.000    0.383      0.522     0.901       0.925
+   ARIMA    1.526         1.003          1.002              1.006     0.131     0.722    0.500      0.515     0.899       0.925
+LightGBM    1.549         1.018          0.982              0.906     0.478     0.000    0.276      0.522     0.728       0.925
 ```
 
-Drift came out on top by predicting a rise every single day while SPY climbed 32%, which is a bet on the trend, not
-a forecast. Theta's raw p-value of 0.053 looks close to something, but it is one of five tries; adjusted for that
-it is 0.265, and the SPA test, which asks whether any of the five beat naive, puts the chance of luck at 24%.
-ARIMA won only 23% of days because it usually settles on a random walk, which ties with naive.
+Drift came out on top by predicting a rise every single day while SPY climbed 30%, which is a bet on the trend, not
+a forecast. No model's edge survives the tests: the best Diebold-Mariano p-value is Theta's 0.126 before adjusting
+for five tries, and the SPA test puts the chance that the best result is luck at 27%. ARIMA tied naive on 72% of
+days, because it usually settles on a random walk.
+
+The intervals are worth a look too. Most models' 80% intervals held the actual close about 90% of the time, so
+they were too wide. Daily returns have fat tails: a few very large days inflate the volatility the intervals are
+built from, which leaves them wider than a typical week needs. LightGBM's quantile regression has the opposite
+problem at 73%, yet it has the best interval score: its narrower intervals saved more than its extra misses cost.
 
 ## The web app
 
@@ -101,24 +106,27 @@ sees them, and a running total of how far the chosen model has pulled ahead of n
 two years. Every chart has a table of the numbers behind it, and there is a dark
 theme.
 
-![The forecast chart and the running total against naive for AAPL, comparing Theta with naive](docs/charts.png)
+![The forecast chart and the running total against naive for AAPL, comparing Drift with naive](docs/charts.png)
 
 ## The models
 
 | Model    | Kind             | Notes                                                                                          |
 | -------- | ---------------- | ---------------------------------------------------------------------------------------------- |
 | Naive    | Baseline         | Tomorrow's price is today's. The benchmark.                                                    |
-| Drift    | Baseline         | Naive plus the average daily change over the training data.                                    |
+| Drift    | Baseline         | Naive plus the average daily percentage change over the training data.                         |
 | ETS      | Statistical      | Exponential smoothing, components picked automatically.                                        |
 | ARIMA    | Statistical      | Auto-ARIMA.                                                                                    |
 | Theta    | Statistical      | The Theta method, which did well in the M3 competition.                                        |
 | LightGBM | Machine learning | Gradient-boosted trees on the last 20 daily log returns, quantile regression for the interval. |
 
-ETS, ARIMA and Theta come from [statsforecast](https://github.com/Nixtla/statsforecast).
+ETS, ARIMA and Theta come from [statsforecast](https://github.com/Nixtla/statsforecast). Every model is fitted to
+log prices and its forecasts converted back, so none can forecast a price below zero, and each one's point forecast
+is the median of its distribution.
 
 To add a model, subclass `Model` in `src/backcast/models.py`, implement `forecast(y, h)` so it returns a `Forecast`
-with a mean path of length `h` and its quantiles from 10% to 90% (an array of shape `(9, h)`), and append an
-instance to `MODELS`. If estimating is slow, implement `fit(y, h)` instead: it returns a function that forecasts
+with a median path of length `h` and its quantiles from 10% to 90% (an array of shape `(9, h)`), and append an
+instance to `MODELS`. Forecasts must be positive prices with the quantiles in increasing order, or the backtest
+stops with an error; the built-in models work on log prices, which guarantees both. If estimating is slow, implement `fit(y, h)` instead: it returns a function that forecasts
 from any later history with the same estimates, and the backtest calls it between refits. The CLI, the leaderboard
 and the charts will include it. Forecasts run in worker processes, so the model has to be picklable. Defining the
 class at module level is enough.
@@ -133,6 +141,7 @@ src/backcast/
   cli.py         the backcast command
   web/           Django app: views, templates, CSS, and the charts (Observable Plot)
 tests/           engine, data and view tests; none of them touch the network
+scripts/         refit_check.py, the experiment behind the refit interval
 ```
 
 ## Deploying
@@ -203,6 +212,10 @@ uv run pytest
 uv run ruff check .
 uv run ruff format --check .
 ```
+
+`scripts/refit_check.py` re-runs the experiment behind the refit interval: it backtests AAPL, KO and NVDA with models
+re-estimated every day, every 5 days and every 20, and reports how far the results move. It takes about half an hour
+on four cores.
 
 CI runs the same three commands on every pull request. It also checks the JavaScript for syntax errors, runs
 Django's system checks, builds the wheel to make sure the templates and static files are still packaged, and

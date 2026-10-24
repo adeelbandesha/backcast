@@ -47,9 +47,9 @@ def walk_forward(
 
     An origin is the number of known prices; the model sees `y[:origin]` and is scored on `y[origin + horizon - 1]`.
     Models are estimated at every `refit`-th origin and keep those estimates, seeing only the new prices, until the
-    next one. Measured on AAPL, KO and NVDA at every horizon, refitting daily instead moved each model's error
-    relative to naive by 0.2 percentage points on average (1.6 at most), changed no significance verdict, and took
-    16 times as long. Refitting every 5 days came no closer to daily than every 20.
+    next one. `scripts/refit_check.py` measures the cost: on AAPL, KO and NVDA at every horizon (closes to 23 October
+    2026), refitting daily instead moved each model's error relative to naive by 0.20 percentage points on average
+    (1.27 at most), changed no significance verdict, and took 17 times as long. Every 5 days came no closer.
     Scores are on log prices, so a 2% miss counts the same at any price level.
     """
     y = prices.to_numpy(dtype=float)
@@ -66,9 +66,14 @@ def walk_forward(
     for origin, endpoints in zip(chain(*blocks), chain(*forecasts), strict=True):
         actual = np.log(y[origin + horizon - 1])
         for model, (predicted, quantiles) in zip(models, endpoints, strict=True):
-            # shortcut: a normal model can put a quantile below zero on a wildly volatile asset; its log is NaN and
-            # that model's scores show as missing. Score such forecasts explicitly if they ever turn up.
-            quantiles = np.log(quantiles)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                point, quantiles = np.log(predicted), np.log(quantiles)
+            # Fail loudly: a NaN score would be skipped by the averages, and the models compared on different days.
+            if not (np.isfinite(point) and np.isfinite(quantiles).all() and (np.diff(quantiles) >= 0).all()):
+                raise ValueError(
+                    f"{model.name} gave an invalid forecast on {prices.index[origin - 1]:%d %b %Y}: the forecast and "
+                    "its quantiles must be positive prices, with the quantiles in increasing order."
+                )
             rows.append(
                 {
                     "model": model.key,
@@ -79,7 +84,7 @@ def walk_forward(
                     "predicted": predicted,
                     "lower": np.exp(quantiles[0]),
                     "upper": np.exp(quantiles[-1]),
-                    "error": abs(actual - np.log(predicted)),
+                    "error": abs(actual - point),
                     "crps": _crps(quantiles, actual),
                     "interval": _interval_score(quantiles[0], quantiles[-1], actual),
                     "uptrend": y[origin - 1] > average[origin - 1],
@@ -124,7 +129,7 @@ def _forecast_block(known: np.ndarray, origins: range, horizon: int, models: lis
     endpoints = []
     for origin in origins:
         forecasts = [forecaster(known[:origin]) for forecaster in forecasters]
-        endpoints.append([(float(f.mean[-1]), f.quantiles[:, -1]) for f in forecasts])
+        endpoints.append([(float(f.median[-1]), f.quantiles[:, -1]) for f in forecasts])
     return endpoints
 
 
@@ -135,6 +140,7 @@ def leaderboard(results: pd.DataFrame, horizon: int) -> pd.DataFrame:
     for key, group in results.groupby("model", sort=False):
         group = group.set_index("origin")
         improvement = naive.error - group.error
+        tied = _tied(group.predicted, naive.predicted)
         moved = np.sign(group.predicted - group["last"])
         called = moved != 0  # a forecast of "no change" has no direction to score
         direction = (moved == np.sign(group.actual - group["last"]))[called].mean() if called.any() else np.nan
@@ -145,8 +151,9 @@ def leaderboard(results: pd.DataFrame, horizon: int) -> pd.DataFrame:
                 "relative_mae": group.error.mean() / naive.error.mean(),
                 "relative_crps": group.crps.mean() / naive.crps.mean(),
                 "relative_interval": group.interval.mean() / naive.interval.mean(),
-                "win_rate": (improvement > 0).mean() if key != "naive" else np.nan,
-                "p_value": _diebold_mariano(improvement.to_numpy(), horizon) if key != "naive" else np.nan,
+                "win_rate": ((improvement > 0) & ~tied).mean() if key != "naive" else np.nan,
+                "tie_rate": tied.mean() if key != "naive" else np.nan,
+                "p_value": np.nan if tied.all() else _diebold_mariano(improvement.to_numpy(), horizon),
                 "direction": direction,
                 "coverage": group.actual.between(group.lower, group.upper).mean(),
             }
@@ -165,6 +172,13 @@ def _holm(p_values: pd.Series) -> pd.Series:
     tested = p_values.dropna().sort_values()
     steps = len(tested) - np.arange(len(tested))
     return (tested * steps).cummax().clip(upper=1).reindex(p_values.index)
+
+
+def _tied(predicted, naive) -> np.ndarray:
+    """Days a model forecast exactly what naive did, as ARIMA does when it settles on a random walk. The forecasts
+    differ only by rounding (exp(log(p)) isn't always p), so their errors differ by noise that is neither a win
+    nor a loss."""
+    return np.isclose(predicted, naive, rtol=1e-9, atol=0)
 
 
 def _diebold_mariano(improvement: np.ndarray, horizon: int) -> float:
@@ -198,10 +212,11 @@ def superior_predictive_ability(results: pd.DataFrame, horizon: int) -> float:
     least h days, the length over which overlapping forecasts stay correlated. Uses the `consistent` p-value.
     """
     losses = results.pivot(index="origin", columns="model", values="error")
-    rivals = losses.drop(columns="naive")
-    # A model that matched naive on every day can't beat it, and its zero-variance differences would break the
-    # studentized statistic (arch reports p = 0 for them).
-    rivals = rivals.loc[:, rivals.sub(losses.naive, axis=0).std() > 0]
+    forecasts = results.pivot(index="origin", columns="model", values="predicted")
+    # A model that matched naive on every day can't beat it, and its differences, zero or rounding noise, would
+    # break the studentized statistic (arch reports p = 0 for exact zeros).
+    rivals = [key for key in losses if key != "naive" and not _tied(forecasts[key], forecasts.naive).all()]
+    rivals = losses[rivals]
     if rivals.empty:
         return np.nan
     block = max(horizon, int(np.sqrt(len(losses))))

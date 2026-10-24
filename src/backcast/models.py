@@ -1,7 +1,9 @@
 """Forecasting models.
 
 Every model turns a price history into an h-step forecast path with quantiles from 10% to 90%; the outer pair is the
-80% interval. To add one, subclass `Model`, implement `forecast` (or `fit`, if estimating is slow), and append an
+80% interval. The models work on log prices and exponentiate their forecasts: prices can't fall below zero and move in
+proportion to their level, and a quantile stays a quantile through the exponential, so the point forecast is the
+median. To add one, subclass `Model`, implement `forecast` (or `fit`, if estimating is slow), and append an
 instance to `MODELS`.
 """
 
@@ -22,7 +24,7 @@ Z = norm.ppf(QUANTILES)[:, None]  # standard normal quantiles, one row per forec
 
 @dataclass(frozen=True)
 class Forecast:
-    mean: np.ndarray  # shape (h,)
+    median: np.ndarray  # the point forecast, shape (h,)
     quantiles: np.ndarray  # shape (len(QUANTILES), h)
 
     @property
@@ -57,19 +59,20 @@ class Naive(Model):
 
     def forecast(self, y, h):
         steps = np.arange(1, h + 1)
-        mean = np.full(h, y[-1])
-        return Forecast(mean, mean + Z * np.diff(y).std(ddof=1) * np.sqrt(steps))
+        returns = np.diff(np.log(y))
+        return Forecast(np.full(h, y[-1]), y[-1] * np.exp(Z * returns.std(ddof=1) * np.sqrt(steps)))
 
 
 class Drift(Model):
     key, name, family = "drift", "Drift", "Baseline"
-    summary = "Extends the average daily change over the training window, like a line from the first price to the last."
+    summary = "Extends the average daily percentage change over the training window into the future."
 
     def forecast(self, y, h):
         steps = np.arange(1, h + 1)
-        diffs = np.diff(y)
-        mean = y[-1] + diffs.mean() * steps
-        return Forecast(mean, mean + Z * diffs.std(ddof=1) * np.sqrt(steps * (1 + steps / len(diffs))))
+        returns = np.diff(np.log(y))
+        log_median = np.log(y[-1]) + returns.mean() * steps
+        spread = returns.std(ddof=1) * np.sqrt(steps * (1 + steps / len(returns)))
+        return Forecast(np.exp(log_median), np.exp(log_median + Z * spread))
 
 
 class StatsForecastModel(Model):
@@ -82,13 +85,13 @@ class StatsForecastModel(Model):
         self.key, self.name, self.summary, self._build = key, name, summary, build
 
     def fit(self, y, h):
-        model = self._build().fit(y=y.astype(float))
+        model = self._build().fit(y=np.log(y))
 
         def forecast(latest):
             # `forward` runs the fitted parameters over the longer history without estimating them again.
-            result = model.forward(y=latest.astype(float), h=h, level=self.levels)
-            quantiles = np.array([np.asarray(result[column], dtype=float) for column in self.columns])
-            return Forecast(np.asarray(result["mean"], dtype=float), quantiles)
+            result = model.forward(y=np.log(latest), h=h, level=self.levels)
+            quantiles = np.exp([np.asarray(result[column], dtype=float) for column in self.columns])
+            return Forecast(np.exp(np.asarray(result["mean"], dtype=float)), quantiles)
 
         return forecast
 

@@ -17,7 +17,7 @@ from backcast.evaluate import (
     verdict,
     walk_forward,
 )
-from backcast.models import QUANTILES, Drift, Forecast, Model, Naive
+from backcast.models import MODELS, QUANTILES, Drift, Forecast, Model, Naive
 
 
 def series(values) -> pd.Series:
@@ -98,6 +98,46 @@ def test_models_are_refit_on_schedule_and_never_on_later_prices():
     assert len(np.unique(fitted_on)) == 9  # 60 origins in blocks of 7
 
 
+@pytest.mark.parametrize("model", MODELS, ids=lambda model: model.key)
+def test_forecasts_stay_positive_after_a_crash(model):
+    # A stock that lost 99% of its value: on raw prices, symmetric intervals sized on its early swings go below zero.
+    y = 100 * np.exp(np.cumsum(np.random.default_rng(5).normal(-0.0066, 0.04, 700)))
+    forecast = model.forecast(y, 20)
+    assert np.isfinite(forecast.quantiles).all() and (forecast.quantiles > 0).all() and (forecast.median > 0).all()
+    assert (np.diff(forecast.quantiles, axis=0) >= 0).all()
+
+
+class BrokenModel(Model):
+    key, name, family, summary = "broken", "Broken", "Test", "Puts its lowest quantile at the given price."
+
+    def __init__(self, lowest):
+        self.lowest = lowest
+
+    def forecast(self, y, h):
+        quantiles = np.full((len(QUANTILES), h), y[-1])
+        quantiles[0] = self.lowest
+        return Forecast(np.full(h, y[-1]), quantiles)
+
+
+@pytest.mark.parametrize("lowest", [-1.0, 0.0, np.nan, 1e9])  # 1e9 puts the 10% quantile above the 20% one
+def test_an_impossible_forecast_stops_the_backtest(lowest):
+    with pytest.raises(ValueError, match="Broken gave an invalid forecast on"):
+        walk_forward(random_walk(), 5, [Naive(), BrokenModel(lowest)], origins=10)
+
+
+def test_ties_with_naive_are_neither_wins_nor_losses():
+    last = np.full(6, 100.0)
+    actual = [101.0, 99.0, 102.0, 98.0, 103.0, 97.0]
+    # Two days off naive (one closer, one further), four the same apart from rounding.
+    predicted = np.exp(np.log(last)) * [1.0, 1.0, 1.0, 1.0, 1.01, 1.01]
+    results = pd.concat([origin_rows("naive", last, actual, last), origin_rows("arima", last, actual, predicted)])
+    arima = leaderboard(results, 1).set_index("model").loc["arima"]
+    assert arima.tie_rate == pytest.approx(4 / 6)
+    assert arima.win_rate == pytest.approx(1 / 6)
+    only_ties = pd.concat([origin_rows("naive", last, actual, last), origin_rows("arima", last, actual, last * 1.0)])
+    assert np.isnan(leaderboard(only_ties, 1).set_index("model").loc["arima", "p_value"])
+
+
 def test_crps_and_interval_score():
     # A forecast with every quantile at one value is a point forecast, and its CRPS is the absolute error.
     assert _crps(np.full(len(QUANTILES), 2.0), 3.5) == pytest.approx(1.5)
@@ -133,7 +173,7 @@ def test_spa_ignores_a_model_identical_to_naive():
     results = pd.concat(
         [
             origin_rows("naive", last, actual, last),
-            origin_rows("arima", last, actual, last),  # chose a random walk: naive exactly
+            origin_rows("arima", last, actual, np.exp(np.log(last))),  # a random walk on log prices: naive, rounded
             origin_rows("drift", last, actual, last * np.exp(noise)),
         ]
     )

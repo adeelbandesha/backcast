@@ -306,6 +306,7 @@ input[aria-invalid="true"] { border-color: var(--worse); }
 .data-table .num { text-align: right; }
 .model-name { font-weight: 500; }
 .model-family { display: block; color: var(--ink-2); font-size: 0.8125rem; }
+.cell-note { display: block; color: var(--ink-2); font-size: 0.8125rem; }
 .baseline-row td, .baseline-row .model-name { color: var(--ink-2); }
 .better { color: var(--better); }
 .worse { color: var(--worse); }

@@ -41,6 +41,9 @@ A model only ever receives the prices up to the forecast date, and it must not r
 downloaded inside `forecast`, that could carry information from after that date. The leakage test in
 `tests/test_evaluate.py` shows the property every model has to keep.
 
+Its forecast and quantiles must be positive prices, with the quantiles in increasing order; the backtest stops
+with an error otherwise. Fitting on log prices and converting back, as the built-in models do, guarantees both.
+
 A model doesn't have to beat naive to be worth adding. Finding out is what the benchmark is for.
 
 ## Reporting a bug
