@@ -19,35 +19,26 @@ only on prices the model hadn't seen, and then tests whether the difference is b
 
 You give it a ticker and a horizon of 1, 5 or 20 trading days. Backcast then:
 
-1. downloads five years of daily closes from Yahoo Finance, adjusted for splits but not for dividends, and leaves
-   out today's price if the market hasn't closed yet;
+1. loads five years of daily closes, adjusted for splits but not for dividends, from Yahoo Finance or from
+   [another price source](docs/price-sources.md);
 2. makes a forecast from every one of the last 504 trading days (about two years), each model seeing only the
    prices up to that day and forecasting the close `h` trading days later. Models are re-estimated every 20 trading
    days and keep their parameters in between, while still seeing each new close;
 3. compares each forecast with the price that actually came, on log prices so a 2% miss counts the same at any
-   price level, and scores it.
-
-| Column (CLI name)                             | What it measures                                                                         |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Mean error (`mae_pct`)                        | Average absolute gap between the log forecast and the log close. Reads as a percentage.  |
-| vs naive (`relative_mae`)                     | Mean error relative to naive's. The leaderboard is sorted by it, and lower is better.    |
-| CRPS vs naive (`relative_crps`)               | Scores the whole forecast distribution (nine quantiles), relative to naive's.            |
-| Interval score vs naive (`relative_interval`) | Width of the 80% interval plus a heavy charge for every close outside it, vs naive's.    |
-| Days won (`win_rate`, `tie_rate`)             | Share of the 504 forecasts in which the model was closer than naive, and share tied.     |
-| Direction right (`direction`)                 | How often the forecast moved the same way as the price. Forecasts of no change left out. |
-| In 80% interval (`coverage`)                  | How often the actual close fell inside the model's 80% interval.                         |
-| p-value (`p_adjusted`)                        | Diebold-Mariano test against naive, Holm-adjusted for testing five models.               |
+   price level, and scores its error, its whole forecast distribution (CRPS), its 80% interval, how often it beat
+   naive and how often it called the direction.
 
 Forecasts made a day apart share most of their future, so their errors are correlated and a plain t-test finds
 edges that aren't there. In a simulation with no real edge it called 20-day results significant two times out of
-three. The Diebold-Mariano test allows for the overlap and was wrong 5 to 7% of the time at the 5% level.
+three. Backcast uses the Diebold-Mariano test, which allows for the overlap and was wrong 5 to 7% of the time at the
+5% level.
 
 The headline uses a different test. Picking the best of five models and testing it alone overstates the evidence,
 so the verdict comes from Hansen's test for superior predictive ability (SPA), which bootstraps all five models
 together and asks whether the best of them beats naive by more than luck would. Results are also split by whether
 the stock was above or below its 200-day average on the forecast date, and when the best model won by betting the
-same direction nearly every day of a period that trended that way, the verdict says so. The Method page in the web
-app goes through all of this in more detail.
+same direction nearly every day of a period that trended that way, the verdict says so.
+[Reading the results](docs/reading-results.md) goes through all of this in detail.
 
 ## Getting started
 
@@ -94,6 +85,8 @@ they were too wide. Daily returns have fat tails: a few very large days inflate 
 built from, which leaves them wider than a typical week needs. LightGBM's quantile regression has the opposite
 problem at 73%, yet it has the best interval score: its narrower intervals saved more than its extra misses cost.
 
+[The command line](docs/command-line.md) explains every column.
+
 ## The web app
 
 ```bash
@@ -123,59 +116,54 @@ ETS, ARIMA and Theta come from [statsforecast](https://github.com/Nixtla/statsfo
 log prices and its forecasts converted back, so none can forecast a price below zero, and each one's point forecast
 is the median of its distribution.
 
-To add a model, subclass `Model` in `src/backcast/models.py`, implement `forecast(y, h)` so it returns a `Forecast`
-with a median path of length `h` and its quantiles from 10% to 90% (an array of shape `(9, h)`), and append an
-instance to `MODELS`. Forecasts must be positive prices with the quantiles in increasing order, or the backtest
-stops with an error; the built-in models work on log prices, which guarantees both. If estimating is slow, implement `fit(y, h)` instead: it returns a function that forecasts
-from any later history with the same estimates, and the backtest calls it between refits. The CLI, the leaderboard
-and the charts will include it. Forecasts run in worker processes, so the model has to be picklable. Defining the
-class at module level is enough.
+Adding a model takes one class. [The models](docs/models.md) shows how, and what every model has to guarantee.
+
+## Price data
+
+Prices come from Yahoo Finance by default, with no account or key needed. You can switch to your own CSV files with
+two environment variables, or connect any other provider by writing a module with one function:
+
+```bash
+BACKCAST_PRICE_SOURCE=csv BACKCAST_CSV_DIR=~/prices uv run backcast run AAPL
+BACKCAST_PRICE_SOURCE=mysources.feed uv run backcast web
+```
+
+Whatever the source, Backcast checks the prices before a backtest sees them: one positive close per trading day,
+oldest first, trimmed to the same five years. [Price sources](docs/price-sources.md) covers the file format, the
+contract for your own source and the checks.
+
+## Documentation
+
+- [Getting started](docs/getting-started.md)
+- [The command line](docs/command-line.md)
+- [The web app](docs/web-app.md)
+- [Reading the results](docs/reading-results.md)
+- [The models](docs/models.md)
+- [Price sources](docs/price-sources.md)
+- [Configuration](docs/configuration.md)
+- [Deployment](docs/deployment.md)
+- [Python API](docs/python.md)
 
 ## Project layout
 
 ```
 src/backcast/
-  data.py        prices from Yahoo Finance, trading calendars, symbol search
+  data.py        loads prices from the configured source and checks them; trading calendars
+  sources/       the built-in price sources: Yahoo Finance and CSV files
   models.py      the forecasting models
   evaluate.py    walk-forward backtest, metrics, significance tests, the verdict
   cli.py         the backcast command
   web/           Django app: views, templates, CSS, and the charts (Observable Plot)
-tests/           engine, data and view tests; none of them touch the network
+docs/            the user guides
+tests/           engine, data, price source and view tests; none of them touch the network
 scripts/         refit_check.py, the experiment behind the refit interval
 ```
 
 ## Deploying
 
-The web app is a small Django project with no database and no user accounts. Run it with Gunicorn:
-
-```bash
-BACKCAST_SECRET_KEY=... BACKCAST_ALLOWED_HOSTS=backcast.example.com uv run gunicorn --timeout 120 backcast.web.wsgi
-```
-
-Settings come from environment variables:
-
-| Variable                    | Default                          | What it's for                                            |
-| --------------------------- | -------------------------------- | -------------------------------------------------------- |
-| `BACKCAST_SECRET_KEY`       | an insecure development key      | Django's secret key. Set it in production.               |
-| `BACKCAST_ALLOWED_HOSTS`    | `localhost,127.0.0.1`            | Comma-separated host names.                              |
-| `BACKCAST_DEBUG`            | off                              | Set to `1` for Django's debug pages.                     |
-| `BACKCAST_CACHE_DIR`        | `backcast-cache` in the temp dir | Where results are cached.                                |
-| `BACKCAST_STATIC_ROOT`      | unset                            | Only needed if you run `collectstatic`.                  |
-| `BACKCAST_RUNS_PER_HOUR`    | `30`                             | New backtests one visitor may start per hour.            |
-| `BACKCAST_CLIENT_IP_HEADER` | unset                            | Header your reverse proxy puts the visitor's address in. |
-| `BACKCAST_LOG_LEVEL`        | `INFO`                           |                                                          |
-
-Results are cached on disk for six hours per symbol and horizon, and every Gunicorn worker reads the same cache.
-WhiteNoise serves the static files directly from the package, so `collectstatic` is optional.
-
-Each worker starts its own pool of processes, one per core, the first time it runs a backtest. On a small machine,
-one or two workers are plenty. Backtests run inside the request and can take more than ten seconds on a slow
-server, which is why the example raises Gunicorn's 30-second default timeout.
-
-Because an uncached run keeps every core busy, each visitor can start only a limited number per hour; cached
-results don't count. Behind a reverse proxy, set `BACKCAST_CLIENT_IP_HEADER` (for example `X-Forwarded-For`), or
-every visitor appears to come from the proxy and they all share one limit. Only set it if the proxy overwrites
-that header, since anyone can send it.
+The web app is a small Django project with no database and no user accounts, run with Gunicorn behind a reverse
+proxy. [Deployment](docs/deployment.md) covers the settings, workers, caching and rate limiting, and
+[Configuration](docs/configuration.md) lists every environment variable.
 
 ## Limits
 
@@ -191,8 +179,8 @@ Read the results with these in mind:
   of the models forecast that.
 - Future dates follow the exchange's holiday calendar for most major exchanges. For the rest, they skip weekends
   only.
-- Prices come through [yfinance](https://github.com/ranaroussi/yfinance), an unofficial Yahoo Finance client. Yahoo's
-  terms apply to the data.
+- By default, prices come through [yfinance](https://github.com/ranaroussi/yfinance), an unofficial Yahoo Finance
+  client, and Yahoo's terms apply to the data.
 
 None of this is investment advice.
 
@@ -213,22 +201,7 @@ uv run ruff check .
 uv run ruff format --check .
 ```
 
-`scripts/refit_check.py` re-runs the experiment behind the refit interval: it backtests AAPL, KO and NVDA with models
-re-estimated every day, every 5 days and every 20, and reports how far the results move. It takes about half an hour
-on four cores.
-
-CI runs the same three commands on every pull request. It also checks the JavaScript for syntax errors, runs
-Django's system checks, builds the wheel to make sure the templates and static files are still packaged, and
-makes sure `requirements.txt` still matches `uv.lock`.
-
-The tests use synthetic price series and never touch the network. They cover the walk-forward split (including
-models that report how many prices they were shown and fitted on, to catch any leakage), the refit schedule, the
-metric arithmetic, the false-positive rate of the Diebold-Mariano test on overlapping forecasts, the trading
-calendars, and the views with the price download mocked out.
-
-The backtest pool uses the `forkserver` start method, because forked workers deadlocked on OpenMP state left over
-from the parent. As a result, a script that calls `walk_forward` has to live in a real file and keep its top-level
-code under `if __name__ == "__main__":`. Piping it into `python -` won't work.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers the checks CI runs, what the tests cover, and the refit experiment.
 
 ## Contributing
 

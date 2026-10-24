@@ -2,7 +2,7 @@ import argparse
 import os
 import sys
 
-from .data import DataError, load_prices, normalize_symbol
+from .data import DataError, SourceError, load_prices, normalize_symbol
 from .evaluate import HORIZONS, headline, run_backtest, trend_note
 from .models import MODELS_BY_KEY
 
@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         prices = load_prices(normalize_symbol(args.symbol))
         report = run_backtest(prices, args.horizon)
-    except (DataError, ValueError) as error:
+    except (DataError, SourceError, ValueError) as error:
         print(f"backcast: {error}", file=sys.stderr)
         return 1
 
