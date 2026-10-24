@@ -100,7 +100,15 @@ problem at 73%, yet it has the best interval score: its narrower intervals saved
 uv run backcast web
 ```
 
-Then open http://127.0.0.1:8000 and search for a company or ticker. Each backtest page has the verdict, the
+This starts the site and a worker beside it. Open http://127.0.0.1:8000 and search for a company or ticker. The
+backtest runs in the worker while the page shows where it is in the queue, and the results appear when it's done.
+
+Every finished run is saved and has its own address, `/runs/<id>/`, which keeps showing that run. The id is a
+fingerprint of the prices, the settings and the Backcast version, so asking for the same backtest on the same data
+goes straight to the saved run, and new prices make a new one. The page records the date of the last close, the
+price source, the version and the settings it ran with.
+
+Each backtest page has the verdict, the
 leaderboard, the same comparison split into up and down markets, a chart of the next few trading days as each model
 sees them, and a running total of how far the chosen model has pulled ahead of naive, or fallen behind, over the
 two years. Every chart has a table of the numbers behind it, and there is a dark
@@ -166,17 +174,26 @@ src/backcast/
   evaluate.py    walk-forward backtest, metrics, significance tests, the verdict
   cli.py         the backcast command
   web/           Django app: views, templates, CSS, and the charts (Observable Plot)
+    tasks.py     the background jobs: running and saving a backtest, and the nightly examples
+    models.py    the saved run
 tests/           engine, data, price source and view tests; none of them touch the network
 scripts/         refit_check.py, the experiment behind the refit interval
 ```
 
 ## Deploying
 
-The web app is a small Django project with no database and no user accounts. Run it with Gunicorn:
+The web app is a small Django project with no user accounts. It needs two processes: the site, run with Gunicorn,
+and a worker that runs the backtests.
 
 ```bash
-BACKCAST_SECRET_KEY=... BACKCAST_ALLOWED_HOSTS=backcast.example.com uv run gunicorn --timeout 120 backcast.web.wsgi
+export BACKCAST_SECRET_KEY=... BACKCAST_ALLOWED_HOSTS=backcast.example.com BACKCAST_DATA_DIR=/var/lib/backcast
+uv run backcast worker &      # creates or updates the database, then waits for jobs
+uv run gunicorn backcast.web.wsgi
 ```
+
+The job queue is [Huey](https://huey.readthedocs.io/) on a SQLite file, and saved runs are in a second SQLite file,
+so there's no Redis or database server to run. Both live in `BACKCAST_DATA_DIR`, which the site and the worker must
+share and which should be backed up if you want old run links to keep working.
 
 Settings come from environment variables:
 
@@ -185,7 +202,9 @@ Settings come from environment variables:
 | `BACKCAST_SECRET_KEY`       | an insecure development key      | Django's secret key. Set it in production.               |
 | `BACKCAST_ALLOWED_HOSTS`    | `localhost,127.0.0.1`            | Comma-separated host names.                              |
 | `BACKCAST_DEBUG`            | off                              | Set to `1` for Django's debug pages.                     |
-| `BACKCAST_CACHE_DIR`        | `backcast-cache` in the temp dir | Where results are cached.                                |
+| `BACKCAST_DATA_DIR`         | `~/.backcast`                    | Saved runs and the job queue (two SQLite files).         |
+| `BACKCAST_CACHE_DIR`        | `backcast-cache` in the temp dir | Where prices, searches and rate limits are cached.       |
+| `BACKCAST_COMMIT`           | from git, in a source checkout   | The commit to record with each run. Set it in an image.  |
 | `BACKCAST_STATIC_ROOT`      | unset                            | Only needed if you run `collectstatic`.                  |
 | `BACKCAST_RUNS_PER_HOUR`    | `30`                             | New backtests one visitor may start per hour.            |
 | `BACKCAST_CLIENT_IP_HEADER` | unset                            | Header your reverse proxy puts the visitor's address in. |
@@ -194,15 +213,22 @@ Settings come from environment variables:
 | `BACKCAST_CSV_DIR`          | unset                            | The folder of price files for the `csv` source.          |
 | `BACKCAST_CSV_CALENDAR`     | unset                            | Trading calendar for CSV prices, such as `XNYS`.         |
 
-Results are cached on disk for six hours per symbol, horizon and price source, and every Gunicorn worker reads the same cache.
-WhiteNoise serves the static files directly from the package, so `collectstatic` is optional.
+Prices are cached on disk for an hour, and every Gunicorn worker reads the same cache. WhiteNoise serves the static
+files directly from the package, so `collectstatic` is optional.
 
-Each worker starts its own pool of processes, one per core, the first time it runs a backtest. On a small machine,
-one or two workers are plenty. Backtests run inside the request and can take more than ten seconds on a slow
-server, which is why the example raises Gunicorn's 30-second default timeout.
+The worker runs one backtest at a time, because each one already spreads across every core. Others wait in the
+queue. Runs the site finds already saved cost nothing. A run left unfinished for 15 minutes, say because the worker
+restarted, is started again the next time someone asks for it.
 
-Because an uncached run keeps every core busy, each visitor can start only a limited number per hour; cached
-results don't count. Behind a reverse proxy, set `BACKCAST_CLIENT_IP_HEADER` (for example `X-Forwarded-For`), or
+The version recorded with each run, and used in its id, is the package version plus the git commit when Backcast
+runs from a checkout. Outside a checkout, such as in a container image, set `BACKCAST_COMMIT`; otherwise a new
+release of the code with the same version number would find the old saved runs and show them.
+
+Every weekday at 22:30 UTC, after the US close, the worker runs the six examples on the home page (AAPL, MSFT,
+NVDA, SPY, KO and TSLA) at all three horizons, so they open straight away.
+
+Because a new run keeps every core busy, each visitor can start only a limited number per hour; saved runs don't
+count. Behind a reverse proxy, set `BACKCAST_CLIENT_IP_HEADER` (for example `X-Forwarded-For`), or
 every visitor appears to come from the proxy and they all share one limit. Only set it if the proxy overwrites
 that header, since anyone can send it.
 
@@ -229,7 +255,6 @@ None of this is investment advice.
 
 What I'm working on next. None of it exists yet.
 
-- Long backtests as background jobs, with saved results you can link to.
 - The same backtest across the S&P 500, with the results published.
 - A pretrained time-series foundation model (Chronos-Bolt), and a volatility track. Volatility, unlike price, is
   known to be partly predictable, so models there have a much better record against naive.
@@ -253,7 +278,8 @@ makes sure `requirements.txt` still matches `uv.lock`.
 The tests use synthetic price series and never touch the network. They cover the walk-forward split (including
 models that report how many prices they were shown and fitted on, to catch any leakage), the refit schedule, the
 metric arithmetic, the false-positive rate of the Diebold-Mariano test on overlapping forecasts, the trading
-calendars, the price source checks and the CSV source, and the views with the price download mocked out.
+calendars, the price source checks and the CSV source, and the views and background jobs with the price download mocked out. They run the jobs inside the request (Huey's
+immediate mode) and keep their SQLite files in a temporary folder.
 
 The backtest pool uses the `forkserver` start method, because forked workers deadlocked on OpenMP state left over
 from the parent. As a result, a script that calls `walk_forward` has to live in a real file and keep its top-level

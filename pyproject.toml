@@ -27,6 +27,7 @@ dependencies = [
     "django>=6.1.2",
     "exchange-calendars>=4.13.2",
     "gunicorn>=26.2.0",
+    "huey>=3.5.3",
     "lightgbm>=4.7.0",
     "numpy>=2.5.4",
     "pandas>=3.1.0",
@@ -62,5 +63,6 @@ line-length = 120
 select = ["E", "F", "I", "B", "UP"]
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "backcast.web.settings"
+DJANGO_SETTINGS_MODULE = "tests.settings"
+pythonpath = ["."]
 testpaths = ["tests"]
