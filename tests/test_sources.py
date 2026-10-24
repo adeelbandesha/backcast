@@ -1,5 +1,6 @@
 import sys
 import types
+from importlib.metadata import EntryPoint, EntryPoints
 
 import numpy as np
 import pandas as pd
@@ -81,8 +82,28 @@ def test_sources_that_break_the_contract_are_named(source):
         load_prices("ABC")
 
 
+def test_the_built_in_sources_are_registered_by_name():
+    assert {"yahoo", "csv"} <= {entry.name for entry in data.entry_points(group=data.ENTRY_POINTS)}
+
+
+def test_installed_packages_can_add_sources(source, monkeypatch):
+    plugins = [EntryPoint("licensed", "fake_prices", data.ENTRY_POINTS)]
+    monkeypatch.setattr(data, "entry_points", lambda **params: EntryPoints(plugins).select(**params))
+    monkeypatch.setenv("BACKCAST_PRICE_SOURCE", "licensed")
+    assert data.price_source() is source
+
+    plugins.append(EntryPoint("licensed", "other_prices", data.ENTRY_POINTS))
+    data._import_source.cache_clear()
+    with pytest.raises(SourceError, match="More than one installed package registers the price source 'licensed'"):
+        data.price_source()
+
+
 @pytest.mark.parametrize(
-    ("name", "message"), [("no_such_module_here", "couldn't be imported"), ("json", "has no load_prices")]
+    ("name", "message"),
+    [
+        ("no_such_module_here", r"couldn't be imported .*Use an installed source \(.*csv.*yahoo"),
+        ("json", "has no load_prices"),
+    ],
 )
 def test_unusable_sources_fail_clearly(monkeypatch, name, message):
     monkeypatch.setenv("BACKCAST_PRICE_SOURCE", name)
