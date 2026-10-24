@@ -1,7 +1,7 @@
 """Daily prices and symbol search from the configured price source, plus trading calendars.
 
 A price source is a module with `load_prices(symbol, years)` and, optionally, `search_symbols(query, limit)` and
-`ATTRIBUTION`. `BACKCAST_PRICE_SOURCE` picks one; docs/price-sources.md describes the contract.
+`ATTRIBUTION`. `BACKCAST_PRICE_SOURCE` picks one; the README describes the contract.
 """
 
 import importlib
