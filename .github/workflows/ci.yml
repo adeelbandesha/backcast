@@ -62,3 +62,21 @@ jobs:
                       backcast/web/static/backcast/vendor/plot.umd.min.js; do
             grep -q "$file" <<< "$contents" || { echo "missing from wheel: $file"; exit 1; }
           done
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compose builds the image and starts the site and the worker
+        env:
+          BACKCAST_COMMIT: ${{ github.sha }}
+        run: |
+          docker compose up --build --detach
+          for i in $(seq 60); do curl -sf http://127.0.0.1:8000/ > /dev/null && break; sleep 2; done
+          curl -sf http://127.0.0.1:8000/static/backcast/css/app.css > /dev/null
+          test -n "$(docker compose ps --status running --quiet worker)"
+          test "$(docker compose ps --all --format '{{.ExitCode}}' migrate)" = 0
+      - name: Logs
+        if: always()
+        run: docker compose logs

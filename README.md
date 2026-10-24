@@ -201,6 +201,19 @@ scripts/         refit_check.py, the experiment behind the refit interval
 The web app is a small Django project with no user accounts. It needs two processes: the site, run with Gunicorn,
 and a worker that runs the backtests.
 
+The simplest way to run both is Docker Compose, which also keeps the saved runs in a Docker volume:
+
+```bash
+BACKCAST_COMMIT=$(git describe --always --dirty) docker compose up --build
+```
+
+The site is then at http://127.0.0.1:8000, reachable only from this machine. The image refuses to build without
+`BACKCAST_COMMIT`, for the reason given below. A one-off `migrate` service sets up the database before the site and
+the worker start, so they never both try. To use another price source, set `BACKCAST_PRICE_SOURCE` the same way; a
+provider package has to be installed in the image first.
+
+Without Docker:
+
 ```bash
 export BACKCAST_SECRET_KEY=... BACKCAST_ALLOWED_HOSTS=backcast.example.com BACKCAST_DATA_DIR=/var/lib/backcast
 uv run backcast worker &      # creates or updates the database, then waits for jobs

@@ -1,0 +1,39 @@
+# Backcast on this machine: the site at http://127.0.0.1:8000, a worker, and a volume for saved runs.
+#   BACKCAST_COMMIT=$(git describe --always --dirty) docker compose up --build
+
+x-backcast: &backcast
+  image: backcast
+  build:
+    context: .
+    args:
+      BACKCAST_COMMIT: ${BACKCAST_COMMIT:-}
+  environment:
+    BACKCAST_PRICE_SOURCE: ${BACKCAST_PRICE_SOURCE:-yahoo}
+  volumes:
+    - backcast-data:/data
+  restart: unless-stopped
+
+services:
+  # Runs once before the others, so the site and the worker never both create the database.
+  migrate:
+    <<: *backcast
+    command: ["django-admin", "migrate"]
+    restart: "no"
+
+  web:
+    <<: *backcast
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *backcast
+    command: ["backcast", "worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  backcast-data:
