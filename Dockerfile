@@ -1,7 +1,7 @@
-FROM python:3.13-slim
+FROM python:3.13-slim AS build
 
-# LightGBM needs the OpenMP runtime.
-RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
+# statsforecast has no wheel for Python 3.13, so it compiles here; the final image doesn't carry the compiler.
+RUN apt-get update && apt-get install -y --no-install-recommends g++ && rm -rf /var/lib/apt/lists/*
 COPY --from=ghcr.io/astral-sh/uv:0.13.5 /uv /bin/uv
 
 WORKDIR /app
@@ -12,6 +12,13 @@ RUN uv sync --locked --no-dev --no-install-project
 COPY README.md LICENSE ./
 COPY src ./src
 RUN uv sync --locked --no-dev --no-editable
+
+
+FROM python:3.13-slim
+
+# LightGBM needs the OpenMP runtime.
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
+COPY --from=build /app/.venv /app/.venv
 
 # Recorded with every run and part of its id. Without it, rebuilt code would reuse runs saved by the old code.
 ARG BACKCAST_COMMIT
