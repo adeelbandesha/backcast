@@ -1,7 +1,7 @@
 {% if error %}
 <div class="notice" role="alert">
   <p>{{ error }}</p>
-  <p><a href="{% url 'home' %}">Try another symbol</a></p>
+  <p>{% if retry_url %}<a href="{{ retry_url }}">Run it again</a> or <a href="{% url 'home' %}">try another symbol</a>{% else %}<a href="{% url 'home' %}">Try another symbol</a>{% endif %}</p>
 </div>
 {% else %}{% with r=results %}
 <section class="verdict" data-outcome="{% if r.verdict.significant %}significant{% elif r.verdict.beaten %}noise{% else %}unbeaten{% endif %}">

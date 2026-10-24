@@ -9,7 +9,7 @@ SECRET_KEY = os.environ.get("BACKCAST_SECRET_KEY", "django-insecure-local-develo
 DEBUG = os.environ.get("BACKCAST_DEBUG") == "1"
 ALLOWED_HOSTS = os.environ.get("BACKCAST_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
-INSTALLED_APPS = ["django.contrib.staticfiles", "backcast.web"]
+INSTALLED_APPS = ["django.contrib.staticfiles", "huey.contrib.djhuey", "backcast.web"]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -35,9 +35,31 @@ TEMPLATES = [
     },
 ]
 
-DATABASES = {}
+# Saved runs and the job queue. Both are SQLite files, so the web server and the worker must share this folder.
+DATA_DIR = Path(os.environ.get("BACKCAST_DATA_DIR", Path.home() / ".backcast"))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-# File-based so every server worker shares one result cache.
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": DATA_DIR / "runs.sqlite3",
+        # WAL lets the web server read while the worker writes; IMMEDIATE avoids "database is locked" on upgrade.
+        "OPTIONS": {"init_command": "PRAGMA journal_mode=WAL;", "transaction_mode": "IMMEDIATE"},
+    }
+}
+
+HUEY = {
+    "huey_class": "huey.SqliteHuey",
+    "name": "backcast",
+    "filename": str(DATA_DIR / "queue.sqlite3"),
+    "results": False,  # a run's outcome is saved on its Run row
+    "immediate": False,  # djhuey would otherwise run tasks inside the request whenever DEBUG is on
+    # One backtest at a time: each one already keeps every core busy. An idle worker checks the queue every second at
+    # most, rather than backing off to Huey's default of every 10 seconds.
+    "consumer": {"workers": 1, "worker_type": "thread", "max_delay": 1.0},
+}
+
+# File-based so every server worker shares the price, search and rate-limit caches.
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
@@ -77,4 +99,6 @@ LOGGING = {
     "disable_existing_loggers": False,
     "handlers": {"console": {"class": "logging.StreamHandler"}},
     "root": {"handlers": ["console"], "level": os.environ.get("BACKCAST_LOG_LEVEL", "INFO")},
+    # The worker command gives Huey's logger its own handler; without this, every line prints twice.
+    "loggers": {"huey": {"propagate": False}},
 }

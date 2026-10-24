@@ -292,8 +292,8 @@ input[aria-invalid="true"] { border-color: var(--worse); }
 .trend-note { margin-top: 16px; max-width: 40rem; font-size: 1.125rem; line-height: 1.5; }
 .verdict-meta { margin-top: 12px; color: var(--ink-2); font-size: 0.9375rem; }
 
-.leaderboard, .trend, .charts { margin-top: 64px; }
-.leaderboard h2, .trend h2, .charts > h2 { margin-bottom: 16px; }
+.leaderboard, .trend, .charts, .run-record { margin-top: 64px; }
+.leaderboard h2, .trend h2, .charts > h2, .run-record h2 { margin-bottom: 16px; }
 .section-lede { max-width: 40rem; margin: -4px 0 16px; color: var(--ink-2); font-size: 0.9375rem; }
 
 .table-scroll { overflow-x: auto; }

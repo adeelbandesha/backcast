@@ -1,0 +1,19 @@
+{# The stored HTML was rendered, and escaped, by the worker from Backcast's own template. #}
+{{ run.html|safe }}
+{% with s=run.settings %}
+<section class="run-record" aria-labelledby="run-record-title">
+  <h2 id="run-record-title">About this run</h2>
+  <p class="section-lede">
+    This page keeps showing this run. When new prices come in, the
+    <a href="{% url 'backtest' run.symbol %}?h={{ run.horizon }}">latest {{ run.symbol }} backtest</a> becomes a new run
+    with its own page.
+  </p>
+  <dl class="notes">
+    <div><dt>Finished</dt><dd><time datetime="{{ run.updated|date:'c' }}">{{ run.updated|date:'j M Y, H:i' }} UTC</time></dd></div>
+    <div><dt>Prices</dt><dd>Closes to <time datetime="{{ run.data_date|date:'Y-m-d' }}">{{ run.data_date|date:'j M Y' }}</time>, from the {{ run.source }} price source.</dd></div>
+    <div><dt>Backcast version</dt><dd>{{ run.code_version }}</dd></div>
+    <div><dt>Settings</dt><dd>Forecasts from the last {{ s.origins }} trading days, models re-estimated every {{ s.refit }} trading days, at least {{ s.min_history }} days of history before each forecast, {{ s.level }}% intervals, up to {{ s.years }} years of prices.</dd></div>
+    <div><dt>Run ID</dt><dd>{{ run.id }}, a fingerprint of the prices, the settings and the code version. The same inputs always give the same ID.</dd></div>
+  </dl>
+</section>
+{% endwith %}

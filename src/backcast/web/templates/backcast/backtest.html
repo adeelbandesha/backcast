@@ -14,24 +14,22 @@
     <h1 class="symbol">{{ symbol }}</h1>
     <nav class="horizon-tabs" aria-label="Forecast horizon">
       {% for h in horizons %}
-        <a href="?h={{ h }}"{% if h == horizon %} aria-current="page"{% endif %}>{{ h }} day{{ h|pluralize }}</a>
+        <a href="{% url 'backtest' symbol %}?h={{ h }}"{% if h == horizon %} aria-current="page"{% endif %}>{{ h }} day{{ h|pluralize }}</a>
       {% endfor %}
     </nav>
   </header>
 
-  <div id="results" class="results"{% if not results %} data-src="{{ results_url }}" aria-busy="true"{% endif %}>
-    {% if results %}
+  <div id="results" class="results"{% if pending %} data-src="{% url 'run-results' run.id %}" aria-busy="true"{% endif %}>
+    {% if error %}
       {% include "backcast/_results.html" %}
-    {% else %}
+    {% elif pending %}
       <div class="loading">
-        <p>
-          Forecasting from {{ origins }} trading days with six models.
-          The first run for a symbol takes several seconds.
-          <span class="elapsed" aria-hidden="true"></span>
-        </p>
+        <p><span class="progress">{{ progress }}</span> <span class="elapsed" aria-hidden="true"></span></p>
         <div class="loading-bar" aria-hidden="true"></div>
-        <noscript><p><a href="{{ results_url }}">Show the results</a> (JavaScript is off, so they open on their own page.)</p></noscript>
+        <noscript><p>JavaScript is off, so this page won't update by itself. Reload it in a few seconds.</p></noscript>
       </div>
+    {% else %}
+      {% include "backcast/_run.html" %}
     {% endif %}
   </div>
 </article>

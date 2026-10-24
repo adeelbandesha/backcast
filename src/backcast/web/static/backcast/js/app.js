@@ -138,19 +138,23 @@ function initCombobox(box) {
 
 document.querySelectorAll("[data-combobox]").forEach(initCombobox);
 
-// Results: the backtest runs when this request arrives, so it can take a while.
-
+// Results: the run is queued or running in the worker, so poll until it is done.
 
 async function loadResults(box, loadingMarkup) {
   const started = Date.now();
   const elapsed = box.querySelector(".elapsed");
+  const progress = box.querySelector(".progress");
   const tick = setInterval(() => {
     elapsed.textContent = `${Math.round((Date.now() - started) / 1000)} s`;
   }, 1000);
   try {
-    const response = await fetch(box.dataset.src);
-    // 422 (bad symbol) and 429 (too many new runs) carry a readable message rendered by the server.
-    if (!response.ok && response.status !== 422 && response.status !== 429) throw new Error(`HTTP ${response.status}`);
+    let response;
+    // 202 means not finished yet; the body says whether the run is queued or running.
+    while ((response = await fetch(box.dataset.src)).status === 202) {
+      progress.textContent = await response.text();
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     box.innerHTML = await response.text();
   } catch {
     const retry = element("button", "button button-primary", "Try again");
@@ -162,7 +166,7 @@ async function loadResults(box, loadingMarkup) {
     });
     const notice = element("div", "notice");
     notice.setAttribute("role", "alert");
-    notice.append(element("p", null, "The backtest didn't finish. The price provider may be slow, or the server is busy."));
+    notice.append(element("p", null, "Lost touch with the server while waiting for the results. The run may still be going."));
     const actions = element("p");
     actions.append(retry);
     notice.append(actions);
