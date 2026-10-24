@@ -142,12 +142,15 @@ class at module level is enough.
 ## Price data
 
 Prices come from Yahoo Finance by default, with no account or key needed. `BACKCAST_PRICE_SOURCE` switches the
-command line and the web app to another source:
+command line and the web app to another source, named or given as a module path:
 
 ```bash
 BACKCAST_PRICE_SOURCE=csv BACKCAST_CSV_DIR=~/prices uv run backcast run AAPL
 BACKCAST_PRICE_SOURCE=mysources.feed uv run backcast web
 ```
+
+Backcast ships two sources, `yahoo` and `csv`, and doesn't include any paid data provider. If you have a licence for
+one, you can add it yourself (see below), either as a module or as a package that anyone can install.
 
 **CSV files.** One file per symbol, named after it (`AAPL.csv`), with a `Date` and a `Close` column. Other columns are
 ignored, so a standard export works as it is. Use closes adjusted for splits but not for dividends, and never an
@@ -159,6 +162,19 @@ closes indexed by date, split-adjusted and not dividend-adjusted, finished tradi
 `close.attrs["calendar"]` if you know the exchange. Raise `backcast.data.DataError` with a readable message when a
 symbol can't be loaded. Two optional names: `search_symbols(query, limit)`, returning dicts with `symbol`, `name` and
 `exchange` for the web app's search box, and `ATTRIBUTION`, a sentence for the footer.
+
+**A provider package.** To share a source, or keep several installed side by side, put the module in its own
+package and register it under the `backcast.price_sources` entry point group. Backcast registers `yahoo` and `csv`
+the same way. In the package's `pyproject.toml`:
+
+```toml
+[project.entry-points."backcast.price_sources"]
+polygon = "backcast_polygon.source"
+```
+
+After `pip install backcast-polygon`, `BACKCAST_PRICE_SOURCE=polygon` selects it. Read API keys from environment
+variables in your module, never from Backcast's settings. Saved runs record the source's name, so results from
+different providers never mix.
 
 Whatever the source, Backcast checks the prices before a backtest sees them: one positive close per date, sorted,
 trimmed to the same five years. Problems are reported with the date they occur on. A source that can't be imported

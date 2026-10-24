@@ -1,13 +1,15 @@
 """Daily prices and symbol search from the configured price source, plus trading calendars.
 
 A price source is a module with `load_prices(symbol, years)` and, optionally, `search_symbols(query, limit)` and
-`ATTRIBUTION`. `BACKCAST_PRICE_SOURCE` picks one; the README describes the contract.
+`ATTRIBUTION`. Installed packages register sources by name under the `backcast.price_sources` entry point group, as
+Backcast does for its own. `BACKCAST_PRICE_SOURCE` picks one by name or module path; the README has the contract.
 """
 
 import importlib
 import os
 import re
 from functools import cache
+from importlib.metadata import entry_points
 from types import ModuleType
 
 import exchange_calendars as xcals
@@ -16,7 +18,7 @@ import pandas as pd
 
 YEARS = 5
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9^][A-Z0-9.\-=^]{0,14}$")
-SOURCES = {"yahoo": "backcast.sources.yahoo", "csv": "backcast.sources.csv"}
+ENTRY_POINTS = "backcast.price_sources"
 DEFAULT_SOURCE = "yahoo"
 
 
@@ -45,12 +47,18 @@ def price_source() -> ModuleType:
 
 @cache
 def _import_source(name: str) -> ModuleType:
-    try:
-        module = importlib.import_module(SOURCES.get(name, name))
-    except ImportError as exc:
+    registered = {entry.value: entry for entry in entry_points(group=ENTRY_POINTS, name=name)}
+    if len(registered) > 1:
         raise SourceError(
-            f"BACKCAST_PRICE_SOURCE is {name!r}, which couldn't be imported ({exc}). Use yahoo, csv, or the import "
-            "path of a module that defines load_prices(symbol, years)."
+            f"More than one installed package registers the price source {name!r}: {', '.join(registered)}."
+        )
+    try:
+        module = next(iter(registered.values())).load() if registered else importlib.import_module(name)
+    except ImportError as exc:
+        installed = ", ".join(sorted({entry.name for entry in entry_points(group=ENTRY_POINTS)}))
+        raise SourceError(
+            f"BACKCAST_PRICE_SOURCE is {name!r}, which couldn't be imported ({exc}). Use an installed source "
+            f"({installed}) or the import path of a module that defines load_prices(symbol, years)."
         ) from exc
     if not callable(getattr(module, "load_prices", None)):
         raise SourceError(f"The price source {name!r} has no load_prices(symbol, years) function.")

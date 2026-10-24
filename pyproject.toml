@@ -45,6 +45,11 @@ Issues = "https://github.com/adeelbandesha/backcast/issues"
 [project.scripts]
 backcast = "backcast.cli:main"
 
+# Price sources by name. A provider package registers its own the same way; see "Price data" in the README.
+[project.entry-points."backcast.price_sources"]
+yahoo = "backcast.sources.yahoo"
+csv = "backcast.sources.csv"
+
 [build-system]
 requires = ["uv_build>=0.13.5,<0.14.0"]
 build-backend = "uv_build"
