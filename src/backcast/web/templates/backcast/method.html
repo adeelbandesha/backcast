@@ -26,8 +26,10 @@
   <p>
     Models are re-estimated every {{ refit }} trading days. In between they keep their estimated parameters but
     still see each new close, the way a model deployed in practice is used. Re-estimating every day was tested on
-    three stocks at all three horizons: it moved each model's error relative to naive by 0.2 percentage points on
-    average, changed none of the verdicts, and took 16 times as long. Re-estimating weekly came no closer to it.
+    AAPL, KO and NVDA at all three horizons, with closes to 23 October 2026: it moved each model's error relative to
+    naive by 0.2 percentage points on average and 1.3 at most, changed none of the verdicts, and took 17 times as
+    long. Re-estimating weekly came no closer to it. The check is <code>scripts/refit_check.py</code> in the
+    repository, so anyone can run it again.
   </p>
   <p>
     An earlier version used 30 non-overlapping windows. Shifting those windows by one day was enough to turn a
@@ -45,6 +47,13 @@
     log prices: a miss of 2% counts the same whether the stock trades at 20 or at 2,000, so a stock that doubled
     over the two years doesn't weigh its later days twice as heavily.
   </p>
+  <p>
+    The models work on log prices too, and their forecasts are converted back to prices. A price can't fall below
+    zero, and it tends to move in proportion to its level, so a model fitted to raw prices can forecast impossible
+    prices for a stock that has fallen a long way: on raw prices, the intervals for a stock that lost 99% of its value
+    reached below zero on every day. Converting back keeps every forecast positive, and it makes each model's point
+    forecast the median of its distribution, which is the value that minimises absolute error.
+  </p>
   <dl class="definitions">
     <div><dt>Mean error</dt><dd>The mean absolute difference between the log of the forecast and the log of the actual close. For errors of a few percent it is very close to the percentage error.</dd></div>
     <div><dt>vs naive</dt><dd>The model's mean error divided by naive's, shown as a percentage change. The leaderboard is sorted by it.</dd></div>
@@ -58,7 +67,7 @@
       Gneiting and Raftery's score for the {{ level }}% interval: its width, plus five times the distance by which the
       actual close falls outside it. A narrow interval only pays if it also holds the actual close.
     </dd></div>
-    <div><dt>Days won</dt><dd>The share of forecasts in which the model's error was smaller than naive's.</dd></div>
+    <div><dt>Days won</dt><dd>The share of forecasts in which the model's error was smaller than naive's. On days a model forecast exactly what naive did, which ARIMA often does when it settles on a random walk, it neither won nor lost; the share of those ties is shown below. A model that tied on every day gets no p-value.</dd></div>
     <div><dt>Direction right</dt><dd>How often the forecast moved in the same direction as the price. Forecasts of no change at all are left out. Most stocks rose more often than they fell over these years, so the results also give the score of always predicting a rise.</dd></div>
     <div><dt>In {{ level }}% interval</dt><dd>How often the actual close fell inside the model's {{ level }}% prediction interval. Well calibrated intervals land near {{ level }}%.</dd></div>
   </dl>

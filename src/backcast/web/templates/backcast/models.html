@@ -21,17 +21,19 @@
 
   <h2>Adding a model</h2>
   <p>
-    Subclass <code>Model</code> in <code>backcast/models.py</code>, return a <code>Forecast</code> with the mean path
-    and its quantiles from 10% to 90%, and add an instance to <code>MODELS</code>. The backtest, leaderboard and
-    charts pick it up. A model that is slow to estimate can implement <code>fit</code> instead, which returns a
-    forecaster that keeps its estimates between refits.
+    Subclass <code>Model</code> in <code>backcast/models.py</code>, return a <code>Forecast</code> with the median
+    path and its quantiles from 10% to 90%, and add an instance to <code>MODELS</code>. The backtest, leaderboard and
+    charts pick it up. Every forecast must be a positive price, with the quantiles in increasing order; working on
+    log prices, as the models here do, guarantees both. A model that is slow to estimate can implement
+    <code>fit</code> instead, which returns a forecaster that keeps its estimates between refits.
   </p>
-<pre><code>class Mean(Model):
-    key, name, family = "mean", "Historical mean", "Baseline"
-    summary = "Forecasts the average price of the whole history."
+<pre><code>class Average(Model):
+    key, name, family = "average", "Historical average", "Baseline"
+    summary = "Forecasts the average log price of the whole history."
 
     def forecast(self, y, h):
-        mean = np.full(h, y.mean())
-        return Forecast(mean, mean + Z * y.std(ddof=1))  # Z: normal quantiles, one row per forecast quantile</code></pre>
+        log_y = np.log(y)
+        median = np.full(h, np.exp(log_y.mean()))
+        return Forecast(median, median * np.exp(Z * log_y.std(ddof=1)))  # Z: one row per forecast quantile</code></pre>
 </article>
 {% endblock %}

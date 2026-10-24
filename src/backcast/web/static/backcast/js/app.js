@@ -345,10 +345,10 @@ function drawPrice(figure, data, key, name, t) {
   const path = (modelKey) => {
     const forecast = data.future.paths[modelKey];
     return [
-      { date: last.date, mean: last.close, lower: last.close, upper: last.close },
+      { date: last.date, median: last.close, lower: last.close, upper: last.close },
       ...data.future.dates.map((date, i) => ({
         date: parseDate(date),
-        mean: forecast.mean[i],
+        median: forecast.median[i],
         lower: forecast.lower[i],
         upper: forecast.upper[i],
       })),
@@ -356,7 +356,7 @@ function drawPrice(figure, data, key, name, t) {
   };
   const model = path(key);
   const naive = path("naive");
-  const future = model.slice(1).map((point, i) => ({ ...point, naive: naive[i + 1].mean }));
+  const future = model.slice(1).map((point, i) => ({ ...point, naive: naive[i + 1].median }));
   const rows = [...history, ...future];
 
   const options = baseOptions(plotNode, t, 340);
@@ -368,8 +368,8 @@ function drawPrice(figure, data, key, name, t) {
       Plot.ruleX([last.date], { stroke: t.ruleStrong }),
       Plot.areaY(model, { x: "date", y1: "lower", y2: "upper", fill: t.accent, fillOpacity: 0.1 }),
       Plot.lineY(history, { x: "date", y: "close", stroke: t.ink, strokeWidth: 2 }),
-      Plot.lineY(naive, { x: "date", y: "mean", stroke: t.muted, strokeWidth: 2 }),
-      Plot.lineY(model, { x: "date", y: "mean", stroke: t.accent, strokeWidth: 2 }),
+      Plot.lineY(naive, { x: "date", y: "median", stroke: t.muted, strokeWidth: 2 }),
+      Plot.lineY(model, { x: "date", y: "median", stroke: t.accent, strokeWidth: 2 }),
     ],
   });
   chart.setAttribute("aria-label", `Recent closes and the next ${data.horizon} trading days forecast by ${name} and naive`);
@@ -381,7 +381,7 @@ function drawPrice(figure, data, key, name, t) {
       row.close != null
         ? [{ kind: "line", color: t.ink, value: row.close, text: formatPrice(row.close), label: "Close" }]
         : [
-            { kind: "line", color: t.accent, value: row.mean, text: formatPrice(row.mean), label: name },
+            { kind: "line", color: t.accent, value: row.median, text: formatPrice(row.median), label: name },
             { kind: "band", color: t.accent, value: null, text: `${formatPrice(row.lower)}–${formatPrice(row.upper)}`, label: "Interval" },
             { kind: "line", color: t.muted, value: row.naive, text: formatPrice(row.naive), label: "Naive" },
           ],
@@ -399,7 +399,7 @@ function drawPrice(figure, data, key, name, t) {
     rows.map((row) => [
       formatDate(row.date),
       row.close != null ? formatPrice(row.close) : "",
-      row.mean != null ? formatPrice(row.mean) : "",
+      row.median != null ? formatPrice(row.median) : "",
       row.lower != null ? formatPrice(row.lower) : "",
       row.upper != null ? formatPrice(row.upper) : "",
       row.naive != null ? formatPrice(row.naive) : "",

@@ -28,6 +28,9 @@ from ..models import LEVEL, MODELS, MODELS_BY_KEY
 
 DEFAULT_HORIZON = 5
 RESULTS_TTL = 6 * 60 * 60
+# Part of the results cache key: bump it whenever `_summarize` changes what it returns, so a deploy never serves
+# results cached in the old shape.
+RESULTS_VERSION = 2
 PRICES_TTL = 60 * 60
 SEARCH_TTL = 60 * 60
 EXAMPLES = ("AAPL", "MSFT", "NVDA", "SPY", "KO", "TSLA")
@@ -139,7 +142,7 @@ def _backtest_url(symbol, horizon):
 
 
 def _results_key(symbol, horizon):
-    return f"results:{quote(symbol)}:{horizon}"
+    return f"results:v{RESULTS_VERSION}:{quote(symbol)}:{horizon}"
 
 
 def _results(request, symbol, horizon) -> dict:
@@ -194,6 +197,7 @@ def _summarize(report) -> dict:
             "crps": _versus(row.model, row.relative_crps),
             "interval": _versus(row.model, row.relative_interval),
             "win_rate": _percent(row.win_rate),
+            "ties": f"{row.tie_rate:.0%} tied" if row.tie_rate >= 0.005 else "",
             "direction": _percent(row.direction),
             "coverage": _percent(row.coverage),
             "p_value": _p_value(row.p_adjusted),
@@ -225,7 +229,7 @@ def _summarize(report) -> dict:
         "future": {
             "dates": _dates(report.future_dates),
             "paths": {
-                key: {"mean": _numbers(f.mean), "lower": _numbers(f.lower), "upper": _numbers(f.upper)}
+                key: {"median": _numbers(f.median), "lower": _numbers(f.lower), "upper": _numbers(f.upper)}
                 for key, f in report.future.items()
             },
         },
