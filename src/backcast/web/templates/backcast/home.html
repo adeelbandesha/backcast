@@ -1,4 +1,5 @@
 {% extends "backcast/base.html" %}
+{% load humanize %}
 
 {% block title %}Backcast: can any model beat the naive forecast?{% endblock %}
 {% block masthead_search %}{% endblock %}
@@ -7,9 +8,9 @@
 <section class="intro">
   <h1>Can any model beat the naive forecast?</h1>
   <p class="lede">
-    Pick a stock. Backcast goes back over its last two years of trading days, asks five models to forecast from
-    each one using only the prices before it, and checks whether any of them did better than the simplest
-    guess there is: the price later will be the price now.
+    Pick a stock. Backcast goes back over its last two years of trading days, asks {{ rivals|apnumber }} models to
+    forecast from each one using only the prices before it, and checks whether any of them did better than the
+    simplest guess there is: the price later will be the price now.
   </p>
 
   <form class="query" action="{% url 'home' %}" method="get" role="search" novalidate>
@@ -33,31 +34,16 @@
   </p>
 </section>
 
-<section class="steps" aria-labelledby="steps-title">
-  <h2 id="steps-title" class="visually-hidden">How a backtest works</h2>
-  <ol>
-    <li>
-      <h3>Walk forward</h3>
-      <p>
-        On each of the last {{ origins }} trading days, every model sees the prices up to that day and forecasts
-        the close 1, 5 or 20 trading days later.
-      </p>
-    </li>
-    <li>
-      <h3>Score only the unseen</h3>
-      <p>
-        Each forecast is checked against a price the model never saw. Nothing is tuned on the test period, so the
-        error is what you would have got at the time.
-      </p>
-    </li>
-    <li>
-      <h3>Test the margin</h3>
-      <p>
-        A model that wins on average can still be lucky, and trying five models makes luck likelier. Hansen's SPA
-        test allows for both and says whether the best result beats naive by more than chance would produce.
-      </p>
-    </li>
-  </ol>
-  <p><a href="{% url 'method' %}">Read the full method</a></p>
+<section class="about" aria-labelledby="about-title">
+  <h2 id="about-title">How a backtest works</h2>
+  <p>
+    On each of the last {{ origins }} trading days, every model sees the prices up to that day and forecasts the
+    close 1, 5 or 20 trading days later. The forecast is scored against a price the model never saw, and nothing is
+    tuned on the test period, so the error is the one you would have had at the time.
+  </p>
+  <p>
+    A model can win on average and still just be lucky, and the more models you try, the likelier that gets.
+    Hansen's SPA test allows for both. The <a href="{% url 'method' %}">method page</a> covers the rest.
+  </p>
 </section>
 {% endblock %}

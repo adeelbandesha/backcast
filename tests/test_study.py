@@ -1,4 +1,7 @@
+import argparse
+import importlib.util
 import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -32,8 +35,11 @@ def test_placebo_signs_are_shared_and_reproducible():
     assert signs.equals(placebo_signs("2020-01-01", "2026-10-23"))
     assert set(signs.unique()) == {-1.0, 1.0} and abs(signs.mean()) < 0.05
     one, other = placebo(prices(1), signs), placebo(prices(2, name="XYZ"), signs)
-    flips = lambda p, q: np.sign(np.log(p).diff()) != np.sign(np.log(q).diff())  # noqa: E731
-    assert flips(prices(1), one).equals(flips(prices(2), other))
+    assert flipped(prices(1), one).equals(flipped(prices(2), other))
+
+
+def flipped(real, replayed):
+    return np.sign(np.log(real).diff()) != np.sign(np.log(replayed).diff())
 
 
 def test_placebo_needs_a_sign_for_every_day():
@@ -56,10 +62,23 @@ def test_rows_are_one_per_model_and_plain_json():
 
 
 def study_row(symbol, model, relative_mae, p_adjusted, best="drift", spa=0.5, seed=None, one_way=None):
-    return dict(symbol=symbol, name=f"{symbol} Inc.", horizon=5, kind="real" if seed is None else "placebo",
-                seed=seed, model=model, best=best, relative_mae=relative_mae, relative_mae_up=relative_mae,
-                relative_mae_down=1.0, p_adjusted=p_adjusted, spa_p_value=spa, significant=spa < 0.05,
-                period_change=0.1, one_way=one_way)  # fmt: skip
+    return {
+        "symbol": symbol,
+        "name": f"{symbol} Inc.",
+        "horizon": 5,
+        "kind": "real" if seed is None else "placebo",
+        "seed": seed,
+        "model": model,
+        "best": best,
+        "relative_mae": relative_mae,
+        "relative_mae_up": relative_mae,
+        "relative_mae_down": 1.0,
+        "p_adjusted": p_adjusted,
+        "spa_p_value": spa,
+        "significant": spa < 0.05,
+        "period_change": 0.1,
+        "one_way": one_way,
+    }
 
 
 def test_findings_compares_real_stocks_with_every_placebo_draw():
@@ -82,7 +101,7 @@ def test_findings_compares_real_stocks_with_every_placebo_draw():
     assert result["horizons"] == [5]
     assert (real["tested"], real["significant"], real["trend_bets"]) == (3, 2, 1)
     assert real["share"] == pytest.approx(2 / 3)
-    assert (fake["draws"], fake["tested"], fake["low"]) == (2, 3, 0.0)
+    assert (fake["draws"], fake["low"]) == (2, 0.0)
     assert fake["share"] == pytest.approx(1 / 6) and fake["high"] == pytest.approx(1 / 3)
     assert result["models"]["drift"] == [{"real": pytest.approx(1 / 3), "placebo": pytest.approx(1 / 6)}]
     assert sorted(result["p_values"][5]["real"]) == [0.02, 0.03, 0.8]
@@ -92,3 +111,38 @@ def test_findings_compares_real_stocks_with_every_placebo_draw():
         ("B", "ets", 0.98, False),
     ]
     json.dumps(result, allow_nan=False)
+
+
+def test_findings_handles_a_horizon_without_placebos_yet():
+    results = pd.DataFrame([study_row("A", "drift", 0.95, 0.01, spa=0.02), study_row("A", "ets", 0.99, 0.3, spa=0.02)])
+    result = findings(results)
+    assert result["summary"][0]["placebo"]["draws"] == 0 and np.isnan(result["summary"][0]["placebo"]["share"])
+    assert result["models"]["drift"][0]["real"] == 1.0 and np.isnan(result["models"]["drift"][0]["placebo"])
+
+
+def test_export_lists_each_failed_backtest_once(tmp_path, monkeypatch):
+    spec = importlib.util.spec_from_file_location("study_script", Path(__file__).parents[1] / "scripts/study.py")
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    monkeypatch.setattr(script, "OUT", tmp_path)
+    pd.DataFrame({"symbol": ["AAA"], "name": ["AAA Inc."]}).to_csv(tmp_path / "universe.csv", index=False)
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "settings.json").write_text(json.dumps({"end": "2026-10-23", "seeds": [1]}))
+    ran = [{"symbol": "AAA", "horizon": 1, "kind": "real", "seed": None, "model": m} for m in ("naive", "drift")]
+    failed = [
+        {"symbol": "AAA", "horizon": 1, "kind": "placebo", "seed": 1, "error": "Bad forecast."},
+        {"symbol": "AAA", "horizon": 20, "kind": "real", "seed": None, "error": "Too short."},
+        {"symbol": "AAA", "horizon": 20, "kind": "placebo", "seed": 1, "error": "Too short."},
+    ]
+    (work / "results.jsonl").write_text("".join(json.dumps({**row, "code": "v1"}) + "\n" for row in ran + failed))
+
+    script.export(argparse.Namespace(work=work))
+
+    study = json.loads((tmp_path / "study.json").read_text())["study"]
+    # The 1-day placebo failed on its own; the 20-day placebo failed only because its stock did.
+    assert study["excluded"] == [
+        {"symbol": "AAA", "horizon": 1, "seed": 1, "reason": "Bad forecast."},
+        {"symbol": "AAA", "horizon": 20, "seed": None, "reason": "Too short."},
+    ]
+    assert (study["tested"], study["models"]) == (1, ["naive", "drift"])

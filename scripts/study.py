@@ -23,7 +23,6 @@ import pandas as pd
 
 from backcast.data import YEARS, DataError, load_prices
 from backcast.evaluate import HORIZONS, ORIGINS, REFIT, run_backtest
-from backcast.models import MODELS
 from backcast.study import SEEDS, placebo, placebo_signs, rows
 from backcast.version import code_version
 
@@ -116,7 +115,12 @@ def export(args) -> None:
     failed = frame[frame.error.notna()]
     results = frame[frame.error.isna()].drop(columns=["error", "code"]).merge(members, on="symbol")
     results.round(6).to_csv(OUT / "results.csv", index=False)
-    excluded = failed[failed.kind == "real"].drop_duplicates("symbol")[["symbol", "error"]]
+    # A stock can fail at one horizon and not another: 20-day forecasts need the most history. Its placebos fail with
+    # it, so a placebo is listed on its own only when the real backtest ran.
+    ran = pd.MultiIndex.from_frame(results[results.kind == "real"][["symbol", "horizon"]])
+    alone = pd.MultiIndex.from_frame(failed[["symbol", "horizon"]]).isin(ran)
+    excluded = failed[(failed.kind == "real") | alone].sort_values(["symbol", "horizon", "seed"])
+    reasons = excluded.rename(columns={"error": "reason"})[["symbol", "horizon", "seed", "reason"]]
     missing = sorted(set(members.symbol) - set(frame.symbol))
     _write_notes(
         {
@@ -126,14 +130,14 @@ def export(args) -> None:
                 "years": YEARS,
                 "origins": ORIGINS,
                 "refit": REFIT,
-                "models": [model.key for model in MODELS],
+                "models": results.model.unique().tolist(),
                 "tested": int(results[results.kind == "real"].symbol.nunique()),
-                "excluded": excluded.rename(columns={"error": "reason"}).to_dict("records"),
+                "excluded": json.loads(reasons.to_json(orient="records")),  # real rows' missing seed becomes null
                 "not_loaded": missing,
             }
         }
     )
-    print(f"{len(results)} rows written; {len(excluded)} stocks excluded, {len(missing)} never loaded.")
+    print(f"{len(results)} rows written; {len(excluded)} backtests failed, {len(missing)} stocks never loaded.")
 
 
 def _prices(folder: Path, symbol: str, end: pd.Timestamp) -> pd.Series:

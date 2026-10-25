@@ -1,4 +1,5 @@
 {% extends "backcast/base.html" %}
+{% load humanize %}
 
 {% block title %}Method · Backcast{% endblock %}
 
@@ -7,7 +8,7 @@
   <h1>Method</h1>
   <p class="lede">
     Backcast asks one question of every stock: did any model forecast its price better than assuming nothing
-    changes? This page describes exactly how that is measured, and where the measurement stops.
+    changes?
   </p>
 
   <h2>The benchmark</h2>
@@ -72,7 +73,7 @@
     <div><dt>In {{ level }}% interval</dt><dd>How often the actual close fell inside the model's {{ level }}% prediction interval. Well calibrated intervals land near {{ level }}%.</dd></div>
   </dl>
 
-  <h2>Is the margin real?</h2>
+  <h2>Testing the margin</h2>
   <p>
     Forecasts made on neighbouring days overlap: two 20-day forecasts made a day apart share 19 days of the future,
     so their errors move together. A plain t-test treats them as independent and finds edges that aren't there. In
@@ -82,12 +83,13 @@
     For each model, Backcast runs the Diebold-Mariano test on the daily differences between naive's error and the
     model's. Its variance allows for correlation over <var>h</var> &minus; 1 days, with Harvey, Leybourne and
     Newbold's small-sample correction. In the same simulation it was wrong 5 to 7% of the time at the 5% level,
-    close to what it should be. Five models are compared with naive, so these p-values are also adjusted with
-    Holm's method.
+    close to what it should be. {{ rivals|apnumber|capfirst }} models are compared with naive, so these p-values are
+    also adjusted with Holm's method.
   </p>
   <p>
-    The headline asks a different question: did any of the five models beat naive? Picking the best of five and
-    testing it alone overstates the evidence, because the best of five is the one most likely to have been lucky.
+    The headline asks a different question: did any of the {{ rivals|apnumber }} models beat naive? Picking the best
+    of them and testing it alone overstates the evidence, because the best is the one most likely to have been
+    lucky.
     Hansen's test for superior predictive ability (SPA) answers the question directly. It bootstraps the daily
     error differences of all the models together, resampling runs of neighbouring days so the overlap is kept, and
     asks how often the best model would look this good if none of them were better than naive. The headline calls
@@ -105,7 +107,7 @@
     So the results split every model's error by the market it forecast in: days when the close was above its
     {{ trend_days }}-day average, and days when it was below. That is known on the day of the forecast, so the split
     shows whether an edge held in both kinds of market, not whether a model happened to guess the direction that
-    came next. And when the best model predicted the same direction on at least 90% of days and the price moved
+    came next. And when the best model predicted the same direction on at least {{ one_way }} of days and the price moved
     that way over the period, the headline says so.
   </p>
 

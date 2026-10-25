@@ -49,7 +49,8 @@ class Model:
 
     def fit(self, y: np.ndarray, h: int) -> Callable[[np.ndarray], Forecast]:
         """Estimate on `y` and return a forecaster for any later history (one that extends `y`) that keeps those
-        estimates. The default re-estimates every time, which is right for models that cost nothing to fit."""
+        estimates. The default re-estimates every time, which is right for models that cost nothing to fit.
+        """
         return lambda latest: self.forecast(latest, h)
 
 
@@ -96,7 +97,7 @@ class StatsForecastModel(Model):
         return forecast
 
 
-class GradientBoosting(Model):
+class LightGBM(Model):
     key, name, family = "lightgbm", "LightGBM", "Machine learning"
     summary = (
         "Gradient-boosted trees that read the last 20 daily returns and predict the return over the next h days, "
@@ -154,7 +155,7 @@ MODELS: list[Model] = [
         "The Theta method, a strong performer in the M3 forecasting competition, with automatic variant selection.",
         partial(AutoTheta, season_length=1),
     ),
-    GradientBoosting(),
+    LightGBM(),
 ]
 
 MODELS_BY_KEY = {model.key: model for model in MODELS}

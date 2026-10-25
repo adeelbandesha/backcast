@@ -222,7 +222,7 @@ def test_results_explain_the_period(client, prices):
     assert re.search(
         r"Over this period the price moved [+−]\d+%\. It was higher 5 days\s+later after \d+ of the 504", text
     )
-    assert re.search(r"Hansen's SPA test\): p = (0\.\d{3}|&lt; 0\.001)\.", text)
+    assert re.search(r"any model beats naive: p = (0\.\d{3}|&lt; 0\.001)\.", text)
     # The fake prices carry no exchange, so the chart admits its future dates skip weekends only.
     assert "holiday calendar isn't known" in text
 
@@ -284,17 +284,25 @@ def test_findings_page(client, tmp_path, monkeypatch):
         for model in ("naive", "drift")
     ]
     pd.DataFrame(rows).to_csv(tmp_path / "results.csv", index=False)
-    study = {"end": "2026-10-23", "seeds": [1, 2], "code": "0.1.0", "origins": 504, "refit": 20, "tested": 1}
-    notes = {
-        "universe": {"source": "https://example.org", "retrieved": "2026-10-24", "members": 2},
-        "study": {**study, "excluded": [{"symbol": "NEW", "reason": "Too recent."}], "not_loaded": []},
+    study = {
+        "end": "2026-10-23",
+        "seeds": [1, 2],
+        "models": ["naive", "drift", "ets", "theta"],
+        "code": "0.1.0",
+        "origins": 504,
+        "refit": 20,
+        "tested": 1,
+        "excluded": [{"symbol": "NEW", "horizon": 20, "seed": None, "reason": "Too recent."}],
+        "not_loaded": [],
     }
+    notes = {"universe": {"source": "https://example.org", "retrieved": "2026-10-24", "members": 2}, "study": study}
     (tmp_path / "study.json").write_text(json.dumps(notes))
 
     response = client.get("/findings/")
     assert response.status_code == 200
-    assert "100.0%" in response.text and "1 member not tested" in response.text and "Too recent." in response.text
+    assert "100.0%" in response.text and "NEW</code> at 20 days: Too recent." in response.text
+    assert "best of the three models" in response.text  # the study's models, not the ones the app runs today
     assert 'href="/backtest/ABC/?h=20"' in response.text and "−3.0%" in response.text and "−5.0%" in response.text
-    assert "0.0% to 0.0%" in response.text and "drawn 2 times" in response.text
+    assert "0.0% to 0.0%" in response.text and "the seeds 1, 2" in response.text
     payload = re.search(r'<script id="findings-data" type="application/json">(.*?)</script>', response.text, re.S)
     assert json.loads(payload.group(1))["p_values"]["5"] == {"placebo": [0.6, 0.6], "real": [0.01]}

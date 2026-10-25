@@ -1,10 +1,7 @@
-"""The study: every model against naive on a fixed list of stocks, each one next to a placebo.
+"""The S&P 500 study: every model against naive on each member, and on placebos of it.
 
-The placebo replays a stock's own daily moves with random signs. The size of every move, and so the volatility, its
-clustering and the fat tails, stay as they were, but the direction becomes a coin toss: no model can beat naive on
-it except by luck. How often the tests find a winner on the placebos is what chance alone produces on these data.
-One sign per date is shared by every stock, so stocks that moved together still move together. That also gives the
-whole market one random path, which can trend by chance, so the placebo is drawn several times with different seeds.
+A placebo replays a stock's own daily moves with random signs, so a model that beats naive on one did it by luck.
+The Findings page explains the design.
 """
 
 import numpy as np
@@ -17,6 +14,7 @@ SEEDS = tuple(SEED + draw for draw in range(5))
 
 
 def placebo_signs(start, end, seed: int = SEED) -> pd.Series:
+    """One random sign per weekday, shared by every stock, so stocks that moved together still do."""
     dates = pd.bdate_range(start, end)
     return pd.Series(np.random.default_rng(seed).choice([-1.0, 1.0], len(dates)), index=dates)
 
@@ -69,8 +67,11 @@ def _plain(value):
 
 
 def findings(results: pd.DataFrame) -> dict:
-    """The Findings page's numbers, from the exported dataset (one row per stock, horizon, real or placebo draw, and
-    model). Placebo figures are averaged over the draws, with the lowest and highest draw beside them."""
+    """The Findings page's numbers, from the exported dataset.
+
+    The dataset has one row per stock, horizon, real or placebo draw, and model. Placebo figures are averaged over
+    the draws, with the lowest and highest draw beside them.
+    """
     # A trend bet: the best model forecast one direction from nearly every origin, and the price went that way.
     bet = results.one_way.map({"rise": 1, "fall": -1})
     results = results.assign(trend_bet=results.significant & (bet == np.sign(results.period_change)))
@@ -82,27 +83,23 @@ def findings(results: pd.DataFrame) -> dict:
     summary = []
     for horizon in horizons:
         real = stocks[(stocks.horizon == horizon) & (stocks.kind == "real")]
-        draws = stocks[(stocks.horizon == horizon) & (stocks.kind == "placebo")].groupby("seed").significant
-        shares = draws.mean()
+        shares = stocks[(stocks.horizon == horizon) & (stocks.kind == "placebo")].groupby("seed").significant.mean()
         summary.append(
             {
                 "horizon": horizon,
                 "real": {
                     "tested": len(real),
                     "significant": int(real.significant.sum()),
-                    "share": float(real.significant.mean()),
+                    "share": real.significant.mean(),
                     "trend_bets": int(real.trend_bet.sum()),
                 },
-                "placebo": {
-                    "draws": len(shares),
-                    "tested": int(draws.size().max()),
-                    "share": float(shares.mean()),
-                    "low": float(shares.min()),
-                    "high": float(shares.max()),
-                },
+                # A partial export can hold a horizon's real rows before any of its placebos.
+                "placebo": {"draws": len(shares), "share": shares.mean(), "low": shares.min(), "high": shares.max()},
             }
         )
-    won = models.pivot_table(index="model", columns=["horizon", "kind"], values="won", aggfunc="mean")
+    won = models.pivot_table(index="model", columns=["horizon", "kind"], values="won", aggfunc="mean").reindex(
+        columns=pd.MultiIndex.from_product([horizons, ["real", "placebo"]])
+    )
     winners = results[(results.kind == "real") & results.significant & (results.model == results.best)]
     return {
         "horizons": horizons,

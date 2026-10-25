@@ -9,7 +9,7 @@ SECRET_KEY = os.environ.get("BACKCAST_SECRET_KEY", "django-insecure-local-develo
 DEBUG = os.environ.get("BACKCAST_DEBUG") == "1"
 ALLOWED_HOSTS = os.environ.get("BACKCAST_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
-INSTALLED_APPS = ["django.contrib.staticfiles", "huey.contrib.djhuey", "backcast.web"]
+INSTALLED_APPS = ["django.contrib.humanize", "django.contrib.staticfiles", "huey.contrib.djhuey", "backcast.web"]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -29,7 +29,7 @@ TEMPLATES = [
         "OPTIONS": {
             "context_processors": [
                 "django.template.context_processors.request",
-                "backcast.web.context_processors.price_source",
+                "backcast.web.context_processors.site",
             ]
         },
     },
@@ -54,8 +54,7 @@ HUEY = {
     "filename": str(DATA_DIR / "queue.sqlite3"),
     "results": False,  # a run's outcome is saved on its Run row
     "immediate": False,  # djhuey would otherwise run tasks inside the request whenever DEBUG is on
-    # One backtest at a time: each one already keeps every core busy. An idle worker checks the queue every second at
-    # most, rather than backing off to Huey's default of every 10 seconds.
+    # One backtest at a time, since each keeps every core busy; poll every second instead of backing off to 10.
     "consumer": {"workers": 1, "worker_type": "thread", "max_delay": 1.0},
 }
 
@@ -90,7 +89,7 @@ SECURE_CSP = {
     "frame-ancestors": [CSP.NONE],
 }
 
-LANGUAGE_CODE = "en-us"
+LANGUAGE_CODE = "en-gb"
 TIME_ZONE = "UTC"
 USE_TZ = True
 

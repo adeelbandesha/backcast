@@ -1,8 +1,8 @@
 {% extends "backcast/base.html" %}
-{% load static %}
+{% load humanize static %}
 
 {% block title %}Findings · Backcast{% endblock %}
-{% block description %}Can any forecasting model beat the naive forecast on the stocks in the S&P 500? Every member tested, next to a placebo that shows what luck alone produces.{% endblock %}
+{% block description %}Every S&P 500 member backtested against the naive forecast, next to placebos that show what luck alone produces.{% endblock %}
 {% block head %}
   <script src="{% static 'backcast/vendor/d3.min.js' %}" defer></script>
   <script src="{% static 'backcast/vendor/plot.umd.min.js' %}" defer></script>
@@ -13,9 +13,9 @@
   <header class="findings-head">
     <h1>Findings</h1>
     <p class="lede">
-      Can any of five forecasting models beat the naive forecast on the stocks in the S&amp;P 500? Every member was
-      backtested at three horizons, and so was a placebo copy of each stock on which no model can have a real edge.
-      The placebos show how often the test finds a winner by luck alone.
+      Every member of the S&amp;P 500, backtested against the naive forecast at three horizons. Each stock also
+      ran on placebo copies of itself, on which no model can have a real edge. The placebos show
+      how often the test finds a winner by luck alone.
     </p>
   </header>
 
@@ -28,9 +28,9 @@
   <section class="study-section" aria-labelledby="share-title">
     <h2 id="share-title">How often a model won</h2>
     <p class="section-lede">
-      The share of stocks where Hansen's SPA test found that the best of the five models beat naive, at p below
-      {{ significance }}. The placebo column is the same share on the placebo copies: its average over
-      {{ summary.0.placebo.draws }} separate draws, and the lowest and highest draw.
+      Stocks where Hansen's SPA test found that the best of the {{ study_rivals|apnumber }} models beat naive, at p
+      below {{ significance }}. The placebo figure is the average over the placebo draws, with the lowest and
+      highest draw beneath it.
     </p>
     <div class="table-scroll">
       <table class="data-table study-table">
@@ -47,7 +47,7 @@
             <tr>
               <th scope="row">{{ row.horizon }} trading day{{ row.horizon|pluralize }}</th>
               <td class="num">{{ row.real.percent }}<span class="cell-note">{{ row.real.significant }} of {{ row.real.tested }}</span></td>
-              <td class="num">{{ row.placebo.percent }}<span class="cell-note">{{ row.placebo.range }}</span></td>
+              <td class="num">{% if row.placebo.draws %}{{ row.placebo.percent }}<span class="cell-note">{{ row.placebo.range }}</span>{% else %}—{% endif %}</td>
               <td class="num">{{ row.real.trend_bets }}<span class="cell-note">of {{ row.real.significant }} wins</span></td>
             </tr>
           {% endfor %}
@@ -55,9 +55,9 @@
       </table>
     </div>
     <p class="section-note">
-      A trend bet is a win where the best model forecast the same direction from at least 90% of the days and the
-      price went that way over the period. That edge is a bet that the trend continues, which pays while a stock
-      keeps rising and costs as much when it turns.
+      A trend bet is a win where the best model forecast the same direction from at least {{ one_way }} of the days,
+      and the price went that way over the period. It pays while the trend lasts and loses as steadily once it
+      turns.
     </p>
   </section>
 
@@ -66,10 +66,9 @@
       <figcaption>
         <h2 id="p-title">Where the p-values fell</h2>
         <p>
-          The share of stocks in each band of SPA p-values, for the real stocks and for their placebos, with every
-          placebo draw counted together. The first
-          band, below {{ significance }}, holds the wins counted above. Where the bars rise above the placebo marks,
-          the real stocks produced more evidence than chance does.
+          The share of stocks in each band of SPA p-values, real stocks against placebos (all draws pooled). The
+          first band, below {{ significance }}, holds the wins counted above. Bars that rise above the placebo marks
+          there mean more evidence than chance produces.
         </p>
       </figcaption>
       <div class="chart-legend" aria-hidden="true"></div>
@@ -88,8 +87,8 @@
   <section class="study-section" aria-labelledby="models-title">
     <h2 id="models-title">Each model on its own</h2>
     <p class="section-lede">
-      The share of stocks where a single model beat naive by the Diebold-Mariano test, with p below
-      {{ significance }} after Holm's adjustment for five models. The second figure in each cell is the share of placebos.
+      Stocks where one model beat naive by the Diebold-Mariano test, with p below {{ significance }} after Holm's
+      adjustment for {{ study_rivals|apnumber }} models. The smaller figure is the placebo share.
     </p>
     <div class="table-scroll">
       <table class="data-table study-table">
@@ -114,10 +113,10 @@
   <section class="study-section" aria-labelledby="winners-title">
     <h2 id="winners-title">The stocks where a model won</h2>
     <p class="section-lede">
-      Every real stock and horizon with a significant SPA result, and the model that did best. The uptrend and
-      downtrend columns split its error by whether the close was above or below its {{ trend_days }}-day average on the day of
-      the forecast; an edge that disappears in one of them is likely a bet on the trend. Each stock links to the
-      same backtest on today's prices, which will not match the study exactly once newer closes are in.
+      Every real stock and horizon with a significant SPA result. The uptrend and downtrend columns split the best
+      model's error by whether the close was above or below its {{ trend_days }}-day average on the forecast date.
+      An edge that vanishes on one side is probably the trend. The links open today's backtest, which drifts from
+      the study's as new closes come in.
     </p>
     {% if winners %}
       <div class="table-scroll">
@@ -139,7 +138,7 @@
               <tr>
                 <th scope="row"><a class="ticker" href="{% url 'backtest' row.symbol %}?h={{ row.horizon }}">{{ row.symbol }}</a><span class="cell-note">{{ row.name }}</span></th>
                 <td class="num">{{ row.horizon }} day{{ row.horizon|pluralize }}</td>
-                <td>{{ row.best }}</td>
+                <td>{{ row.best }}{% if row.trend_bet %}<span class="cell-note">trend bet</span>{% endif %}</td>
                 <td class="num {{ row.change.tone }}">{{ row.change.text }}</td>
                 <td class="num {{ row.up.tone }}">{{ row.up.text }}</td>
                 <td class="num {{ row.down.tone }}">{{ row.down.text }}</td>
@@ -159,50 +158,51 @@
     <h2 id="design-title">How the study was run</h2>
     <p>
       The universe is the {{ notes.universe.members }} members of the S&amp;P 500 listed on Wikipedia on
-      {{ notes.universe.retrieved }} (<a href="{{ notes.universe.source }}">the exact revision</a>). Every stock
-      uses five years of daily closes ending {{ study.end }}, and the same backtest as the rest of Backcast:
-      forecasts from each of the last {{ study.origins }} trading days, models re-estimated every {{ study.refit }},
-      scored at the horizon on prices they had not seen. The <a href="{% url 'method' %}">method page</a> has the
-      details. {{ study.tested }} of them could be tested.
+      {{ notes.universe.retrieved }} (<a href="{{ notes.universe.source }}">this revision</a>). {{ study.tested }}
+      of them were tested at one horizon or more; the first table counts each horizon. Every stock gets five years
+      of daily closes ending {{ study.end }} and the same backtest as the rest of Backcast: a forecast from each of the last {{ study.origins }} trading days,
+      models re-estimated every {{ study.refit }}, scored on prices they had not seen. The
+      <a href="{% url 'method' %}">method page</a> has the details.
     </p>
     <p>
-      The placebo replays each stock's own daily moves with their signs drawn at random. The size of every move
-      stays the same, so the volatility, its clustering and the fat tails are all real, but the direction of each
-      day is a coin toss that no model can forecast. One coin toss per date is shared by every stock, so stocks that
-      moved together still move together. That also gives the whole market a single random path, which can trend
-      by chance and hand trend bets easy wins, so the placebo was drawn {{ study.seeds|length }} times, each from
-      its own fixed seed ({{ study.seeds|join:", " }}).
+      A placebo replays a stock's own daily moves with random signs. Every move keeps its size, so the volatility,
+      its clustering and the fat tails are real; only the direction is a coin toss, and no model can forecast that.
+      Each date gets one coin toss for all stocks, which keeps stocks that moved together moving together.
+    </p>
+    <p>
+      It also hands the whole market a single random path. If that path happens to trend, trend bets win on many
+      placebos at once, so one draw could make chance look generous or stingy. The placebo was drawn
+      {{ study.seeds|length|apnumber }} times, from the seeds {{ study.seeds|join:", " }}.
     </p>
     <h3>Limits</h3>
     <ul>
       <li>
-        The universe is today's index, so it only holds companies that did well enough to be in it now. Stocks that
-        fell out over the five years are missing, which is survivorship bias. It favours stocks that rose, and so it
-        favours Drift.
+        The universe is today's index. Companies that fell out of it over the five years are missing, and the ones
+        left did well enough to stay. This survivorship bias favours stocks that rose, and with them Drift.
       </li>
       <li>
-        Stocks move together, so the results for different stocks are not independent and a share of wins can't be
-        given a textbook margin of error. The spread across the {{ study.seeds|length }} placebo draws stands in for
-        one. It is rough: five draws show how far chance moves the share, not its exact limits.
+        Stocks move together, so their results are not independent, and a share of wins has no textbook margin of
+        error. The spread across the placebo draws is the stand-in. With this few draws it shows roughly how far
+        chance moves the share, not its exact limits.
       </li>
-      <li>Two years of forecasts is one stretch of market history. The next two years could look different.</li>
+      <li>These are two particular years of forecasts, and the next two could go differently.</li>
     </ul>
-    {% if untested %}
+    {% if study.excluded or study.not_loaded %}
       <details class="excluded">
-        <summary>{{ untested }} member{{ untested|pluralize }} not tested</summary>
+        <summary>Backtests that could not run</summary>
         <ul>
-          {% for row in study.excluded %}<li><code>{{ row.symbol }}</code>: {{ row.reason }}</li>{% endfor %}
+          {% for row in study.excluded %}<li><code>{{ row.symbol }}</code> at {{ row.horizon }} day{{ row.horizon|pluralize }}{% if row.seed %}, placebo {{ row.seed }}{% endif %}: {{ row.reason }}</li>{% endfor %}
           {% for symbol in study.not_loaded %}<li><code>{{ symbol }}</code>: the prices never loaded.</li>{% endfor %}
         </ul>
       </details>
     {% endif %}
     <h3>Download the data</h3>
     <p>
-      <a href="{% static 'backcast/study/results.csv' %}" download>results.csv</a> has one row per stock, horizon,
-      real or placebo, and model, with every score on the results page.
-      <a href="{% static 'backcast/study/study.json' %}" download>study.json</a> records the settings, and
-      <a href="{% static 'backcast/study/universe.csv' %}" download>universe.csv</a> the members. Code version
-      <code>{{ study.code }}</code>. To run it again, see <code>scripts/study.py</code>.
+      <a href="{% static 'backcast/study/results.csv' %}" download>results.csv</a> has a row for every stock,
+      horizon, draw and model, with all the scores from the results page.
+      <a href="{% static 'backcast/study/study.json' %}" download>study.json</a> holds the settings and
+      <a href="{% static 'backcast/study/universe.csv' %}" download>universe.csv</a> the member list. Code version
+      <code>{{ study.code }}</code>; <code>scripts/study.py</code> runs it again.
     </p>
   </section>
   {{ chart|json_script:"findings-data" }}
