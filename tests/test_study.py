@@ -43,8 +43,13 @@ def test_placebo_needs_a_sign_for_every_day():
 
 def test_rows_are_one_per_model_and_plain_json():
     report = run_backtest(prices(3), 5, [Naive(), Drift()])
-    lines = rows(report, "real")
+    lines = rows(report, "placebo", 7)
     assert sorted(line["model"] for line in lines) == ["drift", "naive"]
     assert {line["symbol"] for line in lines} == {"ABC"} and {line["horizon"] for line in lines} == {5}
+    assert {(line["kind"], line["seed"]) for line in lines} == {("placebo", 7)}
     assert lines[0]["origins"] == 504 and lines[0]["last_target"] == "2026-10-23"
+    assert lines[0]["one_way"] == report.verdict.one_way
+    by_model = {line["model"]: line for line in lines}
+    assert by_model["naive"]["relative_mae_up"] == 1.0
+    assert by_model["drift"]["relative_mae_up"] == report.trend.loc[True, "drift"]
     json.dumps(lines, allow_nan=False)
