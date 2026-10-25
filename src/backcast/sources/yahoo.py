@@ -19,14 +19,22 @@ def load_prices(symbol: str, years: int) -> pd.Series:
     Dividend adjustment is left out on purpose: it rescales every earlier price by later dividends, so past prices
     would not be the prices anyone saw. `attrs["calendar"]` names the trading calendar (see `calendar_for`).
     """
-    try:
-        ticker = yf.Ticker(symbol)
-        history = ticker.history(period=f"{years}y", interval="1d", auto_adjust=False)
-        metadata = ticker.history_metadata or {}
-    except Exception as exc:  # yfinance raises many unrelated exception types
-        raise DataError(f"Couldn't reach Yahoo Finance for {symbol}. Try again in a minute.") from exc
-    if history.empty or "Close" not in history:
-        raise DataError(f"No price history found for {symbol}.")
+    # When fetching its session cookie times out, yfinance carries on and returns nothing instead of raising. The
+    # next request fetches the cookie again and usually works, so an empty answer gets a second try.
+    for _ in range(2):
+        try:
+            ticker = yf.Ticker(symbol)
+            history = ticker.history(period=f"{years}y", interval="1d", auto_adjust=False)
+            metadata = ticker.history_metadata or {}
+        except Exception as exc:  # yfinance raises many unrelated exception types
+            raise DataError(f"Couldn't reach Yahoo Finance for {symbol}. Try again in a minute.") from exc
+        if not history.empty and "Close" in history:
+            break
+    else:
+        raise DataError(
+            f"Yahoo Finance returned no prices for {symbol}. Check the symbol; if it's right, Yahoo may be slow, so "
+            "try again in a minute."
+        )
     close = history["Close"].dropna()
     close.index = close.index.tz_localize(None).normalize()
     close = drop_unfinished_day(close, metadata, pd.Timestamp.now(tz="UTC")).rename(symbol)

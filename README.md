@@ -219,7 +219,7 @@ Without Docker:
 ```bash
 export BACKCAST_SECRET_KEY=... BACKCAST_ALLOWED_HOSTS=backcast.example.com BACKCAST_DATA_DIR=/var/lib/backcast
 uv run backcast worker &      # creates or updates the database, then waits for jobs
-uv run gunicorn backcast.web.wsgi
+uv run gunicorn --timeout 120 backcast.web.wsgi
 ```
 
 The job queue is [Huey](https://huey.readthedocs.io/) on a SQLite file, and saved runs are in a second SQLite file,
@@ -244,8 +244,10 @@ Settings come from environment variables:
 | `BACKCAST_CSV_DIR`          | unset                            | The folder of price files for the `csv` source.          |
 | `BACKCAST_CSV_CALENDAR`     | unset                            | Trading calendar for CSV prices, such as `XNYS`.         |
 
-Prices are cached on disk for an hour, and every Gunicorn worker reads the same cache. WhiteNoise serves the static
-files directly from the package, so `collectstatic` is optional.
+The backtest page loads prices inside the request, and when Yahoo is slow that can take most of a minute, so
+the example raises Gunicorn's 30-second timeout. Prices are cached on disk for an hour, and every Gunicorn worker
+reads the same cache. WhiteNoise serves the static files directly from the package, so `collectstatic` is
+optional.
 
 The worker runs one backtest at a time, because each one already spreads across every core. Others wait in the
 queue. Runs the site finds already saved cost nothing. A run left unfinished for 15 minutes, say because the worker
