@@ -34,4 +34,5 @@ RUN useradd --create-home backcast && mkdir /data && chown backcast /data
 USER backcast
 VOLUME /data
 EXPOSE 8000
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--access-logfile", "-", "backcast.web.wsgi"]
+# A backtest page loads its prices inside the request, and a slow Yahoo can take most of a minute.
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--timeout", "120", "--access-logfile", "-", "backcast.web.wsgi"]

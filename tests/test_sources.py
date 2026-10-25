@@ -8,6 +8,7 @@ import pytest
 
 from backcast import data
 from backcast.data import DataError, SourceError, attribution, load_prices, search_symbols
+from backcast.sources import yahoo
 
 
 @pytest.fixture
@@ -37,6 +38,27 @@ def test_yahoo_is_the_default(monkeypatch):
     monkeypatch.delenv("BACKCAST_PRICE_SOURCE", raising=False)
     assert data.price_source().__name__ == "backcast.sources.yahoo"
     assert "Yahoo Finance" in attribution()
+
+
+def test_yahoo_retries_an_empty_answer_once(monkeypatch):
+    dates = pd.date_range("2026-10-19", periods=5, tz="America/New_York")
+    answers = [pd.DataFrame(), pd.DataFrame({"Close": [1.0, 2.0, 3.0, 4.0, 5.0]}, index=dates)]
+    calls = []
+
+    class Ticker:
+        def __init__(self, symbol):
+            self.history_metadata = {}
+
+        def history(self, **kwargs):
+            calls.append(kwargs)
+            return answers.pop(0) if answers else pd.DataFrame()
+
+    monkeypatch.setattr(yahoo.yf, "Ticker", Ticker)
+    assert yahoo.load_prices("ABC", 5).tolist() == [1.0, 2.0, 3.0, 4.0, 5.0]
+    assert len(calls) == 2
+    with pytest.raises(DataError, match="returned no prices for XYZ. Check the symbol"):
+        yahoo.load_prices("XYZ", 5)
+    assert len(calls) == 4
 
 
 def test_closes_are_sorted_dated_and_cleaned(source):
