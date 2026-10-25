@@ -1,0 +1,38 @@
+name: Bug report
+description: A wrong number, an error, or a page that doesn't work.
+labels: [bug]
+body:
+  - type: input
+    id: run
+    attributes:
+      label: What you ran
+      description: The symbol and horizon, or the link to the run (`/runs/<id>/`).
+      placeholder: NVDA, 5 days
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - Web app
+        - Command line
+        - Docker
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: >-
+        What you expected and what you got. Paste the CLI output or add a screenshot. If a price looks wrong, check it
+        against another source first: Yahoo's data is occasionally wrong at the source.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: >-
+        The Backcast version on the run page, or `git describe --always --dirty` in your checkout. Mention the price
+        source if it isn't Yahoo.
