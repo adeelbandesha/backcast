@@ -11,7 +11,7 @@ from django.utils import timezone
 from backcast.data import DataError
 from backcast.evaluate import run_backtest
 from backcast.models import Drift, Naive
-from backcast.web import tasks
+from backcast.web import tasks, views
 from backcast.web.models import Run
 
 FAST_MODELS = [Naive(), Drift()]
@@ -255,3 +255,46 @@ def test_each_price_source_keeps_its_own_runs(client, prices, monkeypatch):
     assert prices == ["MSFT", "MSFT"]
     assert Run.objects.count() == 2
     assert "Daily closes from local CSV files." in client.get("/").text
+
+
+def test_findings_page(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(views, "STUDY", tmp_path)
+    assert "doesn't have the study's results yet" in client.get("/findings/").text
+
+    rows = [
+        {
+            "symbol": "ABC",
+            "name": "ABC Inc.",
+            "horizon": h,
+            "kind": "placebo" if seed else "real",
+            "seed": seed,
+            "model": model,
+            "best": "drift",
+            "relative_mae": 0.97 if model == "drift" else 1.0,
+            "relative_mae_up": 0.95 if model == "drift" else 1.0,
+            "relative_mae_down": None,
+            "p_adjusted": 0.01 if model == "drift" else None,
+            "spa_p_value": 0.6 if seed else 0.01,
+            "significant": not seed,
+            "period_change": 0.2,
+            "one_way": "rise",
+        }
+        for h in (1, 5, 20)
+        for seed in (None, 1, 2)
+        for model in ("naive", "drift")
+    ]
+    pd.DataFrame(rows).to_csv(tmp_path / "results.csv", index=False)
+    study = {"end": "2026-10-23", "seeds": [1, 2], "code": "0.1.0", "origins": 504, "refit": 20, "tested": 1}
+    notes = {
+        "universe": {"source": "https://example.org", "retrieved": "2026-10-24", "members": 2},
+        "study": {**study, "excluded": [{"symbol": "NEW", "reason": "Too recent."}], "not_loaded": []},
+    }
+    (tmp_path / "study.json").write_text(json.dumps(notes))
+
+    response = client.get("/findings/")
+    assert response.status_code == 200
+    assert "100.0%" in response.text and "1 member not tested" in response.text and "Too recent." in response.text
+    assert 'href="/backtest/ABC/?h=20"' in response.text and "−3.0%" in response.text and "−5.0%" in response.text
+    assert "0.0% to 0.0%" in response.text and "drawn 2 times" in response.text
+    payload = re.search(r'<script id="findings-data" type="application/json">(.*?)</script>', response.text, re.S)
+    assert json.loads(payload.group(1))["p_values"]["5"] == {"placebo": [0.6, 0.6], "real": [0.01]}

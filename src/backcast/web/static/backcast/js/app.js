@@ -223,6 +223,10 @@ function initCharts() {
     drawCumulative(charts.querySelector('[data-chart="cumulative"]'), data, key, names[key], t);
   };
   picker.addEventListener("change", draw);
+  redrawOn(charts, draw);
+}
+
+function redrawOn(node, draw) {
   document.addEventListener("backcast:theme", draw);
   let width = 0;
   new ResizeObserver(([entry]) => {
@@ -231,7 +235,7 @@ function initCharts() {
       width = next;
       draw();
     }
-  }).observe(charts);
+  }).observe(node);
 }
 
 function baseOptions(plotNode, t, height) {
@@ -473,8 +477,79 @@ function drawCumulative(figure, data, key, name, t) {
   );
 }
 
+// Findings: where the study's SPA p-values fell, real stocks against their placebos, one panel per horizon.
+
+const BINS = 20;
+
+function drawPValues(figure, data, t) {
+  const formatShare = d3.format(".1%");
+  const share = (values) => {
+    const counts = new Array(BINS).fill(0);
+    for (const p of values) counts[Math.min(BINS - 1, Math.floor(p * BINS))]++;
+    return counts.map((count) => ({ count, share: values.length ? count / values.length : 0 }));
+  };
+  const panels = Object.entries(data.p_values).map(([horizon, kinds]) => {
+    const real = share(kinds.real ?? []);
+    const placebo = share(kinds.placebo ?? []);
+    return {
+      horizon,
+      rows: real.map((cell, bin) => ({ bin, from: bin / BINS, to: (bin + 1) / BINS, real: cell, placebo: placebo[bin] })),
+    };
+  });
+  const top = d3.max(panels.flatMap((panel) => panel.rows.flatMap((row) => [row.real.share, row.placebo.share])));
+  const range = (row) => `${row.from.toFixed(2)} to ${row.to.toFixed(2)}`;
+
+  for (const { horizon, rows } of panels) {
+    const plotNode = figure.querySelector(`[data-horizon="${horizon}"] .chart-plot`);
+    const chart = Plot.plot({
+      ...baseOptions(plotNode, t, 200),
+      marginLeft: 44,
+      x: { type: "band", domain: d3.range(BINS), paddingInner: 0.15, paddingOuter: 0 },
+      y: { domain: [0, top], nice: true },
+      marks: [
+        Plot.gridY({ stroke: t.rule, strokeOpacity: 1, ticks: 4 }),
+        Plot.axisY({ tickSize: 0, tickPadding: 8, label: null, ticks: 4, tickFormat: d3.format(".0%") }),
+        // Ticks at 0, 0.25, 0.5 and 0.75 sit on the left edge of their band.
+        Plot.axisX({ ticks: [0, 5, 10, 15], tickSize: 0, tickPadding: 10, label: null, tickFormat: (bin) => bin / BINS, textAnchor: "start", dx: -3 }),
+        Plot.barY(rows, { x: "bin", y: (row) => row.real.share, fill: t.accent, ry1: 2 }),
+        Plot.tickY(rows.filter((row) => row.placebo.count), { x: "bin", y: (row) => row.placebo.share, stroke: t.ink, strokeWidth: 2 }),
+        Plot.ruleY([0], { stroke: t.ruleStrong }),
+      ],
+    });
+    chart.setAttribute("aria-label", `SPA p-values at ${horizon} trading days, real stocks against their placebos`);
+    plotNode.replaceChildren(chart);
+    hover(plotNode, chart, rows, t, (row) => ({
+      title: `p from ${range(row)}`,
+      items: [
+        { kind: "rect", color: t.accent, value: null, text: formatShare(row.real.share), label: `Stocks (${row.real.count})` },
+        { kind: "line", color: t.ink, value: null, text: formatShare(row.placebo.share), label: `Placebos (${row.placebo.count})` },
+      ],
+    }), "bin");
+  }
+
+  legend(figure, [
+    ["rect", t.accent, "Stocks"],
+    ["line", t.ink, "Placebos"],
+  ]);
+  dataTable(
+    figure,
+    ["SPA p-value", ...panels.flatMap(({ horizon }) => [`${horizon}d stocks`, `${horizon}d placebos`])],
+    panels[0].rows.map((_, bin) => [
+      range(panels[0].rows[bin]),
+      ...panels.flatMap(({ rows }) => [formatShare(rows[bin].real.share), formatShare(rows[bin].placebo.share)]),
+    ]),
+  );
+}
+
+function initFindings() {
+  const data = JSON.parse(document.getElementById("findings-data").textContent);
+  const figure = document.querySelector('[data-chart="p-values"]');
+  redrawOn(figure, () => drawPValues(figure, data, tokens()));
+}
+
 // Start-up runs last, once every constant above is defined.
 
 const results = document.getElementById("results");
 if (results?.dataset.src) loadResults(results, results.innerHTML);
 else if (document.getElementById("chart-data")) initCharts();
+else if (document.getElementById("findings-data")) initFindings();
