@@ -10,7 +10,7 @@ whole market one random path, which can trend by chance, so the placebo is drawn
 import numpy as np
 import pandas as pd
 
-from .evaluate import Report
+from .evaluate import SIGNIFICANCE, Report
 
 SEED = 20261024
 SEEDS = tuple(SEED + draw for draw in range(5))
@@ -66,3 +66,67 @@ def _plain(value):
     if isinstance(value, np.generic):
         value = value.item()
     return None if isinstance(value, float) and np.isnan(value) else value
+
+
+def findings(results: pd.DataFrame) -> dict:
+    """The Findings page's numbers, from the exported dataset (one row per stock, horizon, real or placebo draw, and
+    model). Placebo figures are averaged over the draws, with the lowest and highest draw beside them."""
+    # A trend bet: the best model forecast one direction from nearly every origin, and the price went that way.
+    bet = results.one_way.map({"rise": 1, "fall": -1})
+    results = results.assign(trend_bet=results.significant & (bet == np.sign(results.period_change)))
+    stocks = results.drop_duplicates(["symbol", "horizon", "seed"])
+    models = results[results.model != "naive"].assign(
+        won=lambda frame: (frame.relative_mae < 1) & (frame.p_adjusted < SIGNIFICANCE)
+    )
+    horizons = sorted(stocks.horizon.unique().tolist())
+    summary = []
+    for horizon in horizons:
+        real = stocks[(stocks.horizon == horizon) & (stocks.kind == "real")]
+        draws = stocks[(stocks.horizon == horizon) & (stocks.kind == "placebo")].groupby("seed").significant
+        shares = draws.mean()
+        summary.append(
+            {
+                "horizon": horizon,
+                "real": {
+                    "tested": len(real),
+                    "significant": int(real.significant.sum()),
+                    "share": float(real.significant.mean()),
+                    "trend_bets": int(real.trend_bet.sum()),
+                },
+                "placebo": {
+                    "draws": len(shares),
+                    "tested": int(draws.size().max()),
+                    "share": float(shares.mean()),
+                    "low": float(shares.min()),
+                    "high": float(shares.max()),
+                },
+            }
+        )
+    won = models.pivot_table(index="model", columns=["horizon", "kind"], values="won", aggfunc="mean")
+    winners = results[(results.kind == "real") & results.significant & (results.model == results.best)]
+    return {
+        "horizons": horizons,
+        "summary": summary,
+        "models": {
+            key: [{"real": row[h, "real"], "placebo": row[h, "placebo"]} for h in horizons]
+            for key, row in won.iterrows()
+        },
+        "p_values": {
+            int(h): {kind: group.spa_p_value.dropna().tolist() for kind, group in by_horizon.groupby("kind")}
+            for h, by_horizon in stocks.groupby("horizon")
+        },
+        "winners": winners.sort_values(["horizon", "spa_p_value", "symbol"])[
+            [
+                "symbol",
+                "name",
+                "horizon",
+                "best",
+                "relative_mae",
+                "relative_mae_up",
+                "relative_mae_down",
+                "spa_p_value",
+                "period_change",
+                "trend_bet",
+            ]
+        ].to_dict("records"),
+    }

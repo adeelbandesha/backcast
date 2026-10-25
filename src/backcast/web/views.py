@@ -1,8 +1,12 @@
 """Pages and the symbol search API. Backtests run in the worker (see tasks.py); pages show saved runs."""
 
+import functools
+import json
 import time
+from pathlib import Path
 from urllib.parse import quote
 
+import pandas as pd
 from django.conf import settings
 from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse
@@ -12,12 +16,14 @@ from django.utils import timezone
 
 from ..data import DataError, normalize_symbol, search_symbols, source_name
 from ..evaluate import HORIZONS, MIN_HISTORY, MIN_ORIGINS, ORIGINS, REFIT, SIGNIFICANCE, TREND_DAYS, required_prices
-from ..models import LEVEL, MODELS
+from ..models import LEVEL, MODELS, MODELS_BY_KEY
+from ..study import findings as study_findings
 from .models import STALLED_AFTER, Run
-from .tasks import EXAMPLES, cached_prices, fingerprint, submit
+from .tasks import EXAMPLES, _p_value, _signed_percent, _versus, cached_prices, fingerprint, submit
 
 DEFAULT_HORIZON = 5
 SEARCH_TTL = 60 * 60
+STUDY = Path(__file__).parent / "static/backcast/study"
 
 
 class RateLimited(Exception):
@@ -94,6 +100,58 @@ def method(request):
             "significance": SIGNIFICANCE,
         },
     )
+
+
+def findings(request):
+    results = STUDY / "results.csv"
+    context = _findings(results, results.stat().st_mtime_ns) if results.exists() else {}
+    return render(
+        request,
+        "backcast/findings.html",
+        {**context, "significance": SIGNIFICANCE, "level": LEVEL, "trend_days": TREND_DAYS},
+    )
+
+
+@functools.lru_cache(maxsize=1)
+def _findings(results, version):
+    """The study's dataset only changes when it is exported again, so it is read once per version of the file."""
+    result = study_findings(pd.read_csv(results))
+    for row in result["summary"]:
+        for kind in ("real", "placebo"):
+            row[kind]["percent"] = _share(row[kind]["share"])
+        row["placebo"]["range"] = f"{_share(row['placebo']['low'])} to {_share(row['placebo']['high'])}"
+    notes = json.loads((results.parent / "study.json").read_text())
+    return {
+        "notes": notes,
+        "untested": len(notes["study"]["excluded"]) + len(notes["study"]["not_loaded"]),
+        "summary": result["summary"],
+        "horizons": result["horizons"],
+        "models": [
+            {
+                "name": model.name,
+                "cells": [{k: _share(v) for k, v in cell.items()} for cell in result["models"][model.key]],
+            }
+            for model in MODELS
+            if model.key in result["models"]
+        ],
+        "winners": [
+            {
+                **row,
+                "best": MODELS_BY_KEY[row["best"]].name,
+                "change": _versus(row["best"], row["relative_mae"]),
+                "up": _versus(row["best"], row["relative_mae_up"]),
+                "down": _versus(row["best"], row["relative_mae_down"]),
+                "spa_p_value": _p_value(row["spa_p_value"]),
+                "period_change": _signed_percent(row["period_change"], 0),
+            }
+            for row in result["winners"]
+        ],
+        "chart": {"p_values": result["p_values"]},
+    }
+
+
+def _share(value) -> str:
+    return f"{value:.1%}"
 
 
 def search(request):

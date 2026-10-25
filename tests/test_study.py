@@ -6,7 +6,7 @@ import pytest
 
 from backcast.evaluate import run_backtest
 from backcast.models import Drift, Naive
-from backcast.study import placebo, placebo_signs, rows
+from backcast.study import findings, placebo, placebo_signs, rows
 
 
 def prices(seed, periods=1250, name="ABC") -> pd.Series:
@@ -53,3 +53,42 @@ def test_rows_are_one_per_model_and_plain_json():
     assert by_model["naive"]["relative_mae_up"] == 1.0
     assert by_model["drift"]["relative_mae_up"] == report.trend.loc[True, "drift"]
     json.dumps(lines, allow_nan=False)
+
+
+def study_row(symbol, model, relative_mae, p_adjusted, best="drift", spa=0.5, seed=None, one_way=None):
+    return dict(symbol=symbol, name=f"{symbol} Inc.", horizon=5, kind="real" if seed is None else "placebo",
+                seed=seed, model=model, best=best, relative_mae=relative_mae, relative_mae_up=relative_mae,
+                relative_mae_down=1.0, p_adjusted=p_adjusted, spa_p_value=spa, significant=spa < 0.05,
+                period_change=0.1, one_way=one_way)  # fmt: skip
+
+
+def test_findings_compares_real_stocks_with_every_placebo_draw():
+    results = pd.DataFrame(
+        [
+            study_row("A", "drift", 0.95, 0.01, spa=0.02, one_way="rise"),
+            study_row("A", "ets", 0.99, 0.30, spa=0.02, one_way="rise"),
+            study_row("B", "ets", 0.98, 0.04, best="ets", spa=0.03),
+            study_row("B", "drift", 1.01, 0.90, best="ets", spa=0.03),
+            study_row("C", "drift", 1.02, 1.0, spa=0.8, one_way="fall"),
+            study_row("C", "ets", 1.03, 1.0, spa=0.8, one_way="fall"),
+            # Draw 1 finds a lucky winner in A; draw 2 finds none.
+            *(study_row(s, m, 0.97, 0.01, spa=0.01, seed=1) for s in "A" for m in ("drift", "ets")),
+            *(study_row(s, m, 1.01, 0.7, spa=0.6, seed=1) for s in "BC" for m in ("drift", "ets")),
+            *(study_row(s, m, 1.01, 0.7, spa=0.6, seed=2) for s in "ABC" for m in ("drift", "ets")),
+        ]
+    )
+    result = findings(results)
+    real, fake = result["summary"][0]["real"], result["summary"][0]["placebo"]
+    assert result["horizons"] == [5]
+    assert (real["tested"], real["significant"], real["trend_bets"]) == (3, 2, 1)
+    assert real["share"] == pytest.approx(2 / 3)
+    assert (fake["draws"], fake["tested"], fake["low"]) == (2, 3, 0.0)
+    assert fake["share"] == pytest.approx(1 / 6) and fake["high"] == pytest.approx(1 / 3)
+    assert result["models"]["drift"] == [{"real": pytest.approx(1 / 3), "placebo": pytest.approx(1 / 6)}]
+    assert sorted(result["p_values"][5]["real"]) == [0.02, 0.03, 0.8]
+    assert sorted(result["p_values"][5]["placebo"]) == [0.01, 0.6, 0.6, 0.6, 0.6, 0.6]
+    assert [(w["symbol"], w["best"], w["relative_mae"], w["trend_bet"]) for w in result["winners"]] == [
+        ("A", "drift", 0.95, True),
+        ("B", "ets", 0.98, False),
+    ]
+    json.dumps(result, allow_nan=False)

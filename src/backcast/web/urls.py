@@ -9,5 +9,6 @@ urlpatterns = [
     path("runs/<slug:run_id>/results/", views.run_results, name="run-results"),
     path("models/", views.models, name="models"),
     path("method/", views.method, name="method"),
+    path("findings/", views.findings, name="findings"),
     path("api/search/", views.search, name="search"),
 ]

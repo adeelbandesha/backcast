@@ -375,3 +375,24 @@ input[aria-invalid="true"] { border-color: var(--worse); }
 .model-list .model-name { font-size: 1.125rem; }
 .model-list .model-family { display: inline; }
 .model-list dd { margin: 6px 0 0; color: var(--ink-2); }
+
+/* Findings */
+
+.findings-head { padding-bottom: 32px; border-bottom: 1px solid var(--ink); }
+.study-section { margin-top: 64px; }
+.study-section > h2 { margin-bottom: 16px; }
+.study-section .chart { padding-top: 0; border-top: 0; }
+.study-section .chart h2 { margin-bottom: 4px; }
+.section-note { max-width: 40rem; margin-top: 16px; color: var(--ink-2); font-size: 0.875rem; }
+.study-table { max-width: 48rem; }
+.ticker { font-family: var(--mono); font-weight: 500; font-size: 0.875rem; }
+
+.small-multiples { display: grid; gap: 32px; margin-top: 8px; }
+@media (min-width: 768px) { .small-multiples { grid-template-columns: repeat(3, 1fr); } }
+.panel h3 { margin-top: 12px; font-size: 0.875rem; font-weight: 500; color: var(--ink-2); }
+.panel .chart-plot { min-height: 200px; margin-top: 4px; }
+
+.excluded { margin-top: 16px; font-size: 0.875rem; color: var(--ink-2); }
+.excluded summary { cursor: pointer; width: fit-content; }
+.excluded ul { columns: 14rem; margin-top: 8px; }
+.prose h3 { margin-top: 32px; }
