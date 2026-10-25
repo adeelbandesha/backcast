@@ -1,0 +1,4 @@
+contact_links:
+  - name: Security problem
+    url: https://github.com/adeelbandesha/backcast/security/advisories/new
+    about: Report it privately, as SECURITY.md describes, not in a public issue.
