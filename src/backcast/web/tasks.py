@@ -1,14 +1,9 @@
 """Backtests run here, in the Huey worker, and each one is saved as a Run that a permalink can show later."""
 
 import hashlib
-import importlib.metadata
 import json
 import logging
 import math
-import os
-import subprocess
-from functools import cache
-from pathlib import Path
 from urllib.parse import quote
 
 from django.core.cache import cache as django_cache
@@ -29,6 +24,7 @@ from ..evaluate import (
     trend_note,
 )
 from ..models import LEVEL, MODELS, MODELS_BY_KEY
+from ..version import code_version
 from .models import Run
 
 PRICES_TTL = 60 * 60
@@ -55,20 +51,6 @@ def run_settings(horizon: int) -> dict:
         "level": LEVEL,
         "models": [model.key for model in MODELS],
     }
-
-
-@cache
-def code_version() -> str:
-    """The package version, plus the commit when it's known: `BACKCAST_COMMIT`, or git in a source checkout."""
-    version = importlib.metadata.version("backcast")
-    commit = os.environ.get("BACKCAST_COMMIT", "").strip()
-    checkout = Path(__file__).resolve().parents[3]
-    if not commit and (checkout / ".git").exists():
-        described = subprocess.run(
-            ["git", "-C", str(checkout), "describe", "--always", "--dirty"], capture_output=True, text=True
-        )
-        commit = described.stdout.strip() if described.returncode == 0 else ""
-    return f"{version}+{commit}" if commit else version
 
 
 def fingerprint(prices, horizon: int) -> str:

@@ -188,12 +188,14 @@ src/backcast/
   sources/       the built-in price sources: Yahoo Finance and CSV files
   models.py      the forecasting models
   evaluate.py    walk-forward backtest, metrics, significance tests, the verdict
+  study.py       the S&P 500 study's placebo and dataset rows
+  version.py     the version recorded with every run
   cli.py         the backcast command
   web/           Django app: views, templates, CSS, and the charts (Observable Plot)
     tasks.py     the background jobs: running and saving a backtest, and the nightly examples
     models.py    the saved run
-tests/           engine, data, price source and view tests; none of them touch the network
-scripts/         refit_check.py, the experiment behind the refit interval
+tests/           engine, data, price source, study and view tests; none of them touch the network
+scripts/         refit_check.py, the experiment behind the refit interval; study.py, the S&P 500 study
 ```
 
 ## Deploying
@@ -280,11 +282,40 @@ Read the results with these in mind:
 
 None of this is investment advice.
 
+## The S&P 500 study
+
+One backtest says little: a stock where some model beats naive could just be lucky. The study runs the same
+backtest on every current S&P 500 member at every horizon and counts how often a model wins by more than chance.
+
+To know what chance alone looks like on these data, each stock also gets a placebo: its own daily moves replayed
+with the direction of each day decided by a coin toss. Every move keeps its size, so the volatility, its clustering
+and the fat tails are all still there, but nothing about the direction is left to forecast. Any "winner" the tests
+find on a placebo is a false positive. The same coin toss applies to every stock on a given day, so stocks that
+moved together still do.
+
+The member list is today's, taken from Wikipedia (the revision is recorded in `study.json`). That adds survivorship
+bias: companies that fell out of the index over the period aren't in it, and the ones that are did well enough to
+stay.
+
+To reproduce it, run the study from a clean checkout of one commit, so every row comes from the same code:
+
+```bash
+git worktree add --detach ../backcast-study main
+cd ../backcast-study && uv sync
+systemd-inhibit --what=sleep:idle uv run python scripts/study.py run --end 2026-10-23
+uv run python scripts/study.py export
+```
+
+The run takes about nine hours on four cores: six backtests per stock, real and placebo at three horizons, at about
+ten seconds each. Stop it whenever you like and run the same command again to carry on. Prices are saved in the
+work folder the first time they load, so a resumed run, and each placebo, use exactly the same data. A download that
+fails is retried on the next run. `export` refuses rows from more than one version of the code.
+
 ## Planned
 
 What I'm working on next. None of it exists yet.
 
-- The same backtest across the S&P 500, with the results published.
+- The study's results, on a Findings page with the dataset to download.
 - A pretrained time-series foundation model (Chronos-Bolt), and a volatility track. Volatility, unlike price, is
   known to be partly predictable, so models there have a much better record against naive.
 
@@ -307,8 +338,9 @@ makes sure `requirements.txt` still matches `uv.lock`.
 The tests use synthetic price series and never touch the network. They cover the walk-forward split (including
 models that report how many prices they were shown and fitted on, to catch any leakage), the refit schedule, the
 metric arithmetic, the false-positive rate of the Diebold-Mariano test on overlapping forecasts, the trading
-calendars, the price source checks and the CSV source, and the views and background jobs with the price download mocked out. They run the jobs inside the request (Huey's
-immediate mode) and keep their SQLite files in a temporary folder.
+calendars, the price source checks and the CSV source, the study's placebo, and the views and background jobs with
+the price download mocked out. They run the jobs inside the request (Huey's immediate mode) and keep their SQLite
+files in a temporary folder.
 
 The backtest pool uses the `forkserver` start method, because forked workers deadlocked on OpenMP state left over
 from the parent. As a result, a script that calls `walk_forward` has to live in a real file and keep its top-level
