@@ -1,8 +1,6 @@
 # Backcast
 
 [![CI](https://github.com/adeelbandesha/backcast/actions/workflows/ci.yml/badge.svg)](https://github.com/adeelbandesha/backcast/actions/workflows/ci.yml)
-![Python 3.13](https://img.shields.io/badge/python-3.13-blue)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Backcast checks whether any forecasting model could have predicted a stock's price better than the laziest guess
 there is: that the price a few days from now will be the same as it is today.
@@ -84,10 +82,10 @@ SPA p-value that no model beats naive: 0.268
 LightGBM    1.549         1.018          0.982              0.906     0.478     0.000    0.276      0.522     0.728       0.925
 ```
 
-Drift came out on top by predicting a rise every single day while SPY climbed 30%, which is a bet on the trend, not
-a forecast. No model's edge survives the tests: the best Diebold-Mariano p-value is Theta's 0.126 before adjusting
-for five tries, and the SPA test puts the chance that the best result is luck at 27%. ARIMA tied naive on 72% of
-days, because it usually settles on a random walk.
+Drift came out on top by predicting a rise on every one of the 504 days while SPY climbed 30%. No model's edge
+survives the tests. The best Diebold-Mariano p-value is Theta's 0.126, and that is before adjusting for five tries.
+If none of the models were better than naive, a best result this good would still turn up about 27% of the time
+(the SPA p-value). ARIMA tied naive on 72% of days: it usually settles on a random walk.
 
 The intervals are worth a look too. Most models' 80% intervals held the actual close about 90% of the time, so
 they were too wide. Daily returns have fat tails: a few very large days inflate the volatility the intervals are
@@ -108,11 +106,9 @@ fingerprint of the prices, the settings and the Backcast version, so asking for 
 goes straight to the saved run, and new prices make a new one. The page records the date of the last close, the
 price source, the version and the settings it ran with.
 
-Each backtest page has the verdict, the
-leaderboard, the same comparison split into up and down markets, a chart of the next few trading days as each model
-sees them, and a running total of how far the chosen model has pulled ahead of naive, or fallen behind, over the
-two years. Every chart has a table of the numbers behind it, and there is a dark
-theme.
+Each backtest page has the verdict, the leaderboard, the same comparison split into up and down markets, a chart
+of the next few trading days as each model sees them, and a running total of how far the chosen model has pulled
+ahead of naive, or fallen behind, over the two years. Every chart has a table of the numbers behind it.
 
 ![The forecast chart and the running total against naive for AAPL, comparing Drift with naive](docs/charts.png)
 
@@ -134,10 +130,11 @@ is the median of its distribution.
 To add a model, subclass `Model` in `src/backcast/models.py`, implement `forecast(y, h)` so it returns a `Forecast`
 with a median path of length `h` and its quantiles from 10% to 90% (an array of shape `(9, h)`), and append an
 instance to `MODELS`. Forecasts must be positive prices with the quantiles in increasing order, or the backtest
-stops with an error; the built-in models work on log prices, which guarantees both. If estimating is slow, implement `fit(y, h)` instead: it returns a function that forecasts
-from any later history with the same estimates, and the backtest calls it between refits. The CLI, the leaderboard
-and the charts will include it. Forecasts run in worker processes, so the model has to be picklable. Defining the
-class at module level is enough.
+stops with an error; the built-in models work on log prices, which guarantees both. If estimating is slow,
+implement `fit(y, h)` instead: it returns a function that forecasts from any later history with the same
+estimates, and the backtest calls it between refits. The CLI, the leaderboard and the charts will include it.
+Forecasts run in worker processes, so the model has to be picklable. Defining the class at module level is
+enough.
 
 ## Price data
 
@@ -154,8 +151,9 @@ one, you can add it yourself (see below), either as a module or as a package tha
 
 **CSV files.** One file per symbol, named after it (`AAPL.csv`), with a `Date` and a `Close` column. Other columns are
 ignored, so a standard export works as it is. Use closes adjusted for splits but not for dividends, and never an
-Adj Close column. Set `BACKCAST_CSV_CALENDAR` to an [exchange_calendars](https://github.com/gerrymanoim/exchange_calendars)
-code such as `XNYS` and future dates skip that exchange's holidays; otherwise they skip weekends only.
+Adj Close column. Set `BACKCAST_CSV_CALENDAR` to an
+[exchange_calendars](https://github.com/gerrymanoim/exchange_calendars) code such as `XNYS` and future dates skip
+that exchange's holidays; otherwise they skip weekends only.
 
 **Your own provider.** Any importable module that defines `load_prices(symbol, years)`, returning a pandas Series of
 closes indexed by date, split-adjusted and not dividend-adjusted, finished trading days only. Set
@@ -289,11 +287,9 @@ None of this is investment advice.
 One backtest says little: a stock where some model beats naive could just be lucky. The study runs the same
 backtest on every current S&P 500 member at every horizon and counts how often a model wins by more than chance.
 
-To know what chance alone looks like on these data, each stock also gets a placebo: its own daily moves replayed
-with the direction of each day decided by a coin toss. Every move keeps its size, so the volatility, its clustering
-and the fat tails are all still there, but nothing about the direction is left to forecast. Any "winner" the tests
-find on a placebo is a false positive. The same coin toss applies to every stock on a given day, so stocks that
-moved together still do.
+To see what chance alone produces, every stock is also backtested on placebos: its own daily moves replayed with
+random signs, drawn five times. Any winner the tests find on a placebo is a false positive. The Findings page
+(`/findings/`) has the results and explains the placebo in full.
 
 The member list is today's, taken from Wikipedia (the revision is recorded in `study.json`). That adds survivorship
 bias: companies that fell out of the index over the period aren't in it, and the ones that are did well enough to
@@ -308,16 +304,16 @@ systemd-inhibit --what=sleep:idle uv run python scripts/study.py run --end 2026-
 uv run python scripts/study.py export
 ```
 
-The run takes about nine hours on four cores: six backtests per stock, real and placebo at three horizons, at about
-ten seconds each. Stop it whenever you like and run the same command again to carry on. Prices are saved in the
-work folder the first time they load, so a resumed run, and each placebo, use exactly the same data. A download that
-fails is retried on the next run. `export` refuses rows from more than one version of the code.
+The run takes about 25 hours on four cores: 18 backtests per stock (the real prices and five placebos, at three
+horizons), at about ten seconds each. Stop it whenever you like and run the same command again to carry on.
+Prices are saved in the work folder the first time they load, so a resumed run and every placebo use exactly the
+same data. A download that fails is retried on the next run. `export` refuses rows from more than one version of
+the code.
 
 ## Planned
 
 What I'm working on next. None of it exists yet.
 
-- The study's results, on a Findings page with the dataset to download.
 - A pretrained time-series foundation model (Chronos-Bolt), and a volatility track. Volatility, unlike price, is
   known to be partly predictable, so models there have a much better record against naive.
 

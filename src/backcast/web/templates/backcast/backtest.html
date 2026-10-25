@@ -2,7 +2,7 @@
 {% load static %}
 
 {% block title %}{{ symbol }} · {{ horizon }}-day backtest · Backcast{% endblock %}
-{% block description %}Can any forecasting model beat the naive forecast for {{ symbol }}, {{ horizon }} trading day{{ horizon|pluralize }} ahead?{% endblock %}
+{% block description %}How forecasting models did against the naive forecast for {{ symbol }}, {{ horizon }} trading day{{ horizon|pluralize }} ahead.{% endblock %}
 {% block head %}
   <script src="{% static 'backcast/vendor/d3.min.js' %}" defer></script>
   <script src="{% static 'backcast/vendor/plot.umd.min.js' %}" defer></script>

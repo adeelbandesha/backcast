@@ -191,7 +191,7 @@ async function loadResults(box, loadingMarkup) {
 const parseDate = window.d3?.utcParse("%Y-%m-%d");
 const formatDate = window.d3?.utcFormat("%-d %b %Y");
 const formatPrice = window.d3?.format(",.2f");
-const formatPoints = (value) => window.d3.format("+,.1f")(value).replace("-", "\u2212");
+const formatPoints = (value) => window.d3.format("+,.1f")(value).replace("-", "−");
 const formatError = window.d3?.format(".2%");
 
 function tokens() {
@@ -288,14 +288,11 @@ function dataTable(figure, headers, rows) {
 }
 
 // Crosshair and tooltip: the vertical rule snaps to the nearest x, and one tooltip lists every series there.
-// On a band scale (bars) there is no rule; the hovered bar stays solid and the others fade.
 function hover(plotNode, chart, rows, t, describe, xKey = "date") {
   const x = chart.scale("x");
   const y = chart.scale("y");
-  const positions = rows.map((row) => x.apply(row[xKey]) + (x.bandwidth ?? 0) / 2);
+  const positions = rows.map((row) => x.apply(row[xKey]));
   const svg = d3.select(chart).style("touch-action", "pan-y");
-  // Rounded bars render as paths and come from two marks, so match them to rows by position.
-  const bars = svg.selectAll('g[aria-label="bar"] > *');
   const [bottom, top] = y.range;
   const layer = svg.append("g").attr("pointer-events", "none").attr("display", "none");
   const rule = layer.append("line").attr("y1", top).attr("y2", bottom).attr("stroke", t.ruleStrong);
@@ -311,11 +308,7 @@ function hover(plotNode, chart, rows, t, describe, xKey = "date") {
       const { title, items } = describe(rows[index]);
       const cx = positions[index];
       layer.attr("display", null);
-      rule.attr("x1", cx).attr("x2", cx).attr("display", x.bandwidth ? "none" : null);
-      bars.attr("opacity", function () {
-        const box = this.getBBox();
-        return Math.abs(box.x + box.width / 2 - cx) < 1 ? 1 : 0.4;
-      });
+      rule.attr("x1", cx).attr("x2", cx);
       dots
         .selectAll("circle")
         .data(items.filter((item) => item.value != null))
@@ -340,7 +333,6 @@ function hover(plotNode, chart, rows, t, describe, xKey = "date") {
     })
     .on("pointerleave", () => {
       layer.attr("display", "none");
-      bars.attr("opacity", null);
       tip.hidden = true;
     });
 }
@@ -460,7 +452,6 @@ function drawCumulative(figure, data, key, name, t) {
     ],
   }));
 
-  legend(figure, []);
   dataTable(
     figure,
     ["Forecast on", "Scored on", "Actual", `${name} forecast`, "Naive forecast", `${name} error`, "Naive error", "Running total"],
@@ -493,7 +484,13 @@ function drawPValues(figure, data, t) {
     const placebo = share(kinds.placebo ?? []);
     return {
       horizon,
-      rows: real.map((cell, bin) => ({ bin, from: bin / BINS, to: (bin + 1) / BINS, real: cell, placebo: placebo[bin] })),
+      rows: real.map((cell, bin) => ({
+        from: bin / BINS,
+        to: (bin + 1) / BINS,
+        middle: (bin + 0.5) / BINS,
+        real: cell,
+        placebo: placebo[bin],
+      })),
     };
   });
   const top = d3.max(panels.flatMap((panel) => panel.rows.flatMap((row) => [row.real.share, row.placebo.share])));
@@ -504,15 +501,22 @@ function drawPValues(figure, data, t) {
     const chart = Plot.plot({
       ...baseOptions(plotNode, t, 200),
       marginLeft: 44,
-      x: { type: "band", domain: d3.range(BINS), paddingInner: 0.15, paddingOuter: 0 },
+      x: { type: "linear", domain: [0, 1] },
       y: { domain: [0, top], nice: true },
       marks: [
         Plot.gridY({ stroke: t.rule, strokeOpacity: 1, ticks: 4 }),
         Plot.axisY({ tickSize: 0, tickPadding: 8, label: null, ticks: 4, tickFormat: d3.format(".0%") }),
-        // Ticks at 0, 0.25, 0.5 and 0.75 sit on the left edge of their band.
-        Plot.axisX({ ticks: [0, 5, 10, 15], tickSize: 0, tickPadding: 10, label: null, tickFormat: (bin) => bin / BINS, textAnchor: "start", dx: -3 }),
-        Plot.barY(rows, { x: "bin", y: (row) => row.real.share, fill: t.accent, ry1: 2 }),
-        Plot.tickY(rows.filter((row) => row.placebo.count), { x: "bin", y: (row) => row.placebo.share, stroke: t.ink, strokeWidth: 2 }),
+        Plot.axisX({ ticks: [0, 0.25, 0.5, 0.75, 1], tickFormat: String, tickSize: 0, tickPadding: 10, label: null }),
+        Plot.rectY(rows, { x1: "from", x2: "to", y: (row) => row.real.share, fill: t.accent, insetLeft: 1, insetRight: 1, ry2: 2 }),
+        Plot.ruleY(rows.filter((row) => row.placebo.count), {
+          x1: "from",
+          x2: "to",
+          y: (row) => row.placebo.share,
+          stroke: t.ink,
+          strokeWidth: 2,
+          insetLeft: 1,
+          insetRight: 1,
+        }),
         Plot.ruleY([0], { stroke: t.ruleStrong }),
       ],
     });
@@ -524,7 +528,7 @@ function drawPValues(figure, data, t) {
         { kind: "rect", color: t.accent, value: null, text: formatShare(row.real.share), label: `Stocks (${row.real.count})` },
         { kind: "line", color: t.ink, value: null, text: formatShare(row.placebo.share), label: `Placebos (${row.placebo.count})` },
       ],
-    }), "bin");
+    }), "middle");
   }
 
   legend(figure, [

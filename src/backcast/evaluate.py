@@ -17,7 +17,7 @@ from .models import LEVEL, MODELS, MODELS_BY_KEY, QUANTILES, Forecast, Model
 
 HORIZONS = (1, 5, 20)
 ORIGINS = 504  # about two years of trading days, one forecast origin per day
-REFIT = 20  # trading days between re-estimates; see `walk_forward`
+REFIT = 20  # trading days between re-estimates; scripts/refit_check.py tests the choice
 MIN_HISTORY = 500
 MIN_ORIGINS = 100
 TREND_DAYS = 200  # an origin is in an uptrend when the close is above its average over this many days
@@ -47,10 +47,8 @@ def walk_forward(
 
     An origin is the number of known prices; the model sees `y[:origin]` and is scored on `y[origin + horizon - 1]`.
     Models are estimated at every `refit`-th origin and keep those estimates, seeing only the new prices, until the
-    next one. `scripts/refit_check.py` measures the cost: on AAPL, KO and NVDA at every horizon (closes to 23 October
-    2026), refitting daily instead moved each model's error relative to naive by 0.20 percentage points on average
-    (1.27 at most), changed no significance verdict, and took 17 times as long. Every 5 days came no closer.
-    Scores are on log prices, so a 2% miss counts the same at any price level.
+    next one; `scripts/refit_check.py` compares this with refitting every day. Scores are on log prices, so a 2% miss
+    counts the same at any price level.
     """
     y = prices.to_numpy(dtype=float)
     if len(y) < required_prices(horizon):
@@ -101,13 +99,15 @@ def required_prices(horizon: int) -> int:
 def _crps(quantiles: np.ndarray, actual: float) -> float:
     """CRPS approximated by twice the mean pinball loss over the forecast quantiles. For a point forecast it equals
     the absolute error. The quantiles stop at 10% and 90%, so a miss far into the tails costs no more than a near
-    one here; the interval score is the metric that charges for it."""
+    one here; the interval score is the metric that charges for it.
+    """
     return float(2 * np.mean(((actual < quantiles) - QUANTILES) * (quantiles - actual)))
 
 
 def _interval_score(lower: float, upper: float, actual: float) -> float:
     """Gneiting and Raftery's interval score: the interval's width, plus 2/alpha times any distance by which the
-    actual falls outside it. Lower is better; a narrow interval only pays off if it also holds the actual."""
+    actual falls outside it. Lower is better; a narrow interval only pays off if it also holds the actual.
+    """
     alpha = 1 - LEVEL / 100
     return upper - lower + 2 / alpha * (max(lower - actual, 0) + max(actual - upper, 0))
 
@@ -124,7 +124,8 @@ def _pool() -> ProcessPoolExecutor:
 
 def _forecast_block(known: np.ndarray, origins: range, horizon: int, models: list[Model]) -> list[list[tuple]]:
     """Runs in a worker process: fit every model at the block's first origin, then forecast the horizon's last day
-    from each origin in the block. `known` ends at the block's last origin, so no model can see a later price."""
+    from each origin in the block. `known` ends at the block's last origin, so no model can see a later price.
+    """
     forecasters = [model.fit(known[: origins[0]], horizon) for model in models]
     endpoints = []
     for origin in origins:
@@ -177,7 +178,8 @@ def _holm(p_values: pd.Series) -> pd.Series:
 def _tied(predicted, naive) -> np.ndarray:
     """Days a model forecast exactly what naive did, as ARIMA does when it settles on a random walk. The forecasts
     differ only by rounding (exp(log(p)) isn't always p), so their errors differ by noise that is neither a win
-    nor a loss."""
+    nor a loss.
+    """
     return np.isclose(predicted, naive, rtol=1e-9, atol=0)
 
 
@@ -187,8 +189,9 @@ def _diebold_mariano(improvement: np.ndarray, horizon: int) -> float:
     Forecasts made on consecutive days share h - 1 days of their future, so their errors are correlated over h - 1
     lags. The variance adds those autocovariances with equal weights, as in the original test, with Harvey,
     Leybourne and Newbold's (1997) small-sample correction and a t distribution. At h = 1 this is exactly the paired
-    t-test. In simulations at 504 origins it rejects a true null 5-7% of the time at the 5% level, where Newey-West
-    weights reject 10-11%; those are kept as the fallback for the rare sample whose variance comes out negative.
+    t-test. Equal weights keep the false-positive rate near the nominal level on overlapping forecasts (see
+    `test_diebold_mariano_holds_its_size_on_overlapping_forecasts`); Newey-West weights reject about twice as often
+    and are only the fallback for a sample whose variance comes out negative.
     """
     n = len(improvement)
     centred = improvement - improvement.mean()

@@ -241,20 +241,9 @@ input[aria-invalid="true"] { border-color: var(--worse); }
 .examples { margin-top: 16px; color: var(--ink-2); font-size: 0.9375rem; }
 .examples a { font-family: var(--mono); font-size: 0.875rem; }
 
-.steps { margin-top: 88px; }
-.steps ol {
-  display: grid; gap: 32px; margin: 0; padding: 0; list-style: none; counter-reset: step;
-}
-@media (min-width: 768px) {
-  .steps ol { grid-template-columns: repeat(3, 1fr); gap: 40px; }
-}
-.steps li { counter-increment: step; padding-top: 16px; border-top: 1px solid var(--rule-strong); }
-.steps li::before {
-  content: counter(step, decimal-leading-zero);
-  display: block; margin-bottom: 12px; font-family: var(--mono); font-size: 0.8125rem; color: var(--muted);
-}
-.steps li p { margin-top: 8px; color: var(--ink-2); font-size: 0.9375rem; }
-.steps > p { margin-top: 32px; font-size: 0.9375rem; }
+.about { max-width: 40rem; margin-top: 88px; padding-top: 24px; border-top: 1px solid var(--rule-strong); }
+.about h2 { font-size: 1rem; font-weight: 600; }
+.about p { margin-top: 12px; color: var(--ink-2); }
 
 /* Report */
 
@@ -322,8 +311,8 @@ input[aria-invalid="true"] { border-color: var(--worse); }
 .chart { margin: 0; padding-top: 20px; border-top: 1px solid var(--rule-strong); }
 .chart + .chart { margin-top: 56px; }
 .chart figcaption p { margin-top: 4px; max-width: 44rem; color: var(--ink-2); font-size: 0.9375rem; }
-.chart-legend:empty { display: none; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 16px; font-size: 0.8125rem; color: var(--ink-2); }
+.chart-legend:empty { display: none; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 8px; }
 .chart-plot { position: relative; margin-top: 12px; min-height: 320px; }
 .chart-plot svg { display: block; overflow: visible; }
@@ -353,6 +342,7 @@ input[aria-invalid="true"] { border-color: var(--worse); }
 
 .prose { max-width: 42rem; }
 .prose h2 { margin-top: 48px; }
+.prose h3 { margin-top: 32px; }
 .prose p, .prose ul, .prose dl, .prose pre { margin-top: 16px; }
 .prose .lede { margin-top: 20px; }
 .prose ul { padding-left: 1.25rem; }
@@ -395,4 +385,3 @@ input[aria-invalid="true"] { border-color: var(--worse); }
 .excluded { margin-top: 16px; font-size: 0.875rem; color: var(--ink-2); }
 .excluded summary { cursor: pointer; width: fit-content; }
 .excluded ul { columns: 14rem; margin-top: 8px; }
-.prose h3 { margin-top: 32px; }

@@ -25,6 +25,7 @@ from ..evaluate import (
 )
 from ..models import LEVEL, MODELS, MODELS_BY_KEY
 from ..version import code_version
+from .formats import p_value, percent, signed_percent, versus
 from .models import Run
 
 PRICES_TTL = 60 * 60
@@ -124,7 +125,7 @@ def precompute():
 
 
 def _summarize(report) -> dict:
-    """Plain values for the template and the charts, so the cache holds no pandas objects."""
+    """Everything _results.html and its charts need, as plain values."""
     verdict = report.verdict
     rows = [
         {
@@ -132,14 +133,14 @@ def _summarize(report) -> dict:
             "name": MODELS_BY_KEY[row.model].name,
             "family": MODELS_BY_KEY[row.model].family,
             "mae": f"{row.mae:.2%}",
-            "change": _versus(row.model, row.relative_mae),
-            "crps": _versus(row.model, row.relative_crps),
-            "interval": _versus(row.model, row.relative_interval),
-            "win_rate": _percent(row.win_rate),
+            "change": versus(row.model, row.relative_mae),
+            "crps": versus(row.model, row.relative_crps),
+            "interval": versus(row.model, row.relative_interval),
+            "win_rate": percent(row.win_rate),
             "ties": f"{row.tie_rate:.0%} tied" if row.tie_rate >= 0.005 else "",
-            "direction": _percent(row.direction),
-            "coverage": _percent(row.coverage),
-            "p_value": _p_value(row.p_adjusted),
+            "direction": percent(row.direction),
+            "coverage": percent(row.coverage),
+            "p_value": p_value(row.p_adjusted),
             "significant": row.p_adjusted < SIGNIFICANCE,
             "best": row.model == verdict.best,
         }
@@ -152,7 +153,7 @@ def _summarize(report) -> dict:
         "rows": [
             {
                 "name": row["name"],
-                "cells": [_versus(row["key"], report.trend.at[up, row["key"]]) for up in (True, False)],
+                "cells": [versus(row["key"], report.trend.at[up, row["key"]]) for up in (True, False)],
             }
             for row in rows
             if row["key"] != "naive"
@@ -189,18 +190,19 @@ def _summarize(report) -> dict:
         "trend_note": trend_note(verdict),
         "verdict": verdict,
         "rows": rows,
+        "rivals": len(rows) - 1,
         "trend": trend,
         "trend_days": TREND_DAYS,
-        "spa_p_value": _p_value(verdict.p_value),
+        "spa_p_value": p_value(verdict.p_value),
         "significance": SIGNIFICANCE,
         "level": LEVEL,
         "as_of": report.prices.index[-1].date(),
         "first_origin": results.origin.min().date(),
         "last_target": results.target.max().date(),
-        "period_change": _signed_percent(verdict.period_change, digits=0),
+        "period_change": signed_percent(verdict.period_change, digits=0),
         "origins": verdict.origins,
         "up_origins": verdict.up_origins,
-        "always_up": _percent(verdict.up_origins / verdict.origins),
+        "always_up": percent(verdict.up_origins / verdict.origins),
         "calendar_known": report.prices.attrs.get("calendar") is not None,
         "chart": chart,
     }
@@ -213,32 +215,3 @@ def _dates(index) -> list[str]:
 def _numbers(values) -> list[float | None]:
     # JSON has no NaN, and four decimals is plenty for prices.
     return [round(float(v), 4) if math.isfinite(v) else None for v in values]
-
-
-def _percent(value) -> str:
-    return "—" if math.isnan(value) else f"{value:.0%}"
-
-
-def _signed_percent(value, digits=1) -> str:
-    if round(value, digits + 2) == 0:
-        return f"{0:.{digits}%}"
-    return f"{value:+.{digits}%}".replace("-", "−")
-
-
-def _versus(key, relative) -> dict:
-    """A model's score relative to naive as a signed change, colored by whether it is better or worse."""
-    if key == "naive" or math.isnan(relative):
-        return {"text": "—", "tone": ""}
-    return {"text": _signed_percent(relative - 1), "tone": _tone(relative - 1)}
-
-
-def _tone(change) -> str:
-    # Judged at the precision shown, so "0.0%" is never colored as a win or a loss.
-    change = round(change, 3)
-    return "better" if change < 0 else "worse" if change > 0 else ""
-
-
-def _p_value(value) -> str:
-    if math.isnan(value):
-        return "—"
-    return "< 0.001" if value < 0.001 else f"{value:.3f}"

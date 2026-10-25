@@ -54,14 +54,19 @@ def constant(value, h) -> Forecast:
 
 
 class CountingModel(Model):
-    key, name, family, summary = "spy", "Spy", "Test", "Forecasts the number of prices it was shown."
+    key, name, family, summary = "counting", "Counting", "Test", "Forecasts the number of prices it was shown."
 
     def forecast(self, y, h):
         return constant(float(len(y)), h)
 
 
 class FitCountingModel(Model):
-    key, name, family, summary = "fit-spy", "Fit spy", "Test", "Forecasts the number of prices it was fitted on."
+    key, name, family, summary = (
+        "fit-counting",
+        "Fit counting",
+        "Test",
+        "Forecasts the number of prices it was fitted on.",
+    )
 
     def fit(self, y, h):
         return lambda latest: constant(float(len(y)), h)

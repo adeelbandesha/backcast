@@ -18,8 +18,9 @@ from ..data import DataError, normalize_symbol, search_symbols, source_name
 from ..evaluate import HORIZONS, MIN_HISTORY, MIN_ORIGINS, ORIGINS, REFIT, SIGNIFICANCE, TREND_DAYS, required_prices
 from ..models import LEVEL, MODELS, MODELS_BY_KEY
 from ..study import findings as study_findings
+from .formats import p_value, percent, signed_percent, versus
 from .models import STALLED_AFTER, Run
-from .tasks import EXAMPLES, _p_value, _signed_percent, _versus, cached_prices, fingerprint, submit
+from .tasks import EXAMPLES, cached_prices, fingerprint, submit
 
 DEFAULT_HORIZON = 5
 SEARCH_TTL = 60 * 60
@@ -103,8 +104,10 @@ def method(request):
 
 
 def findings(request):
-    results = STUDY / "results.csv"
-    context = _findings(results, results.stat().st_mtime_ns) if results.exists() else {}
+    results, notes_file = STUDY / "results.csv", STUDY / "study.json"
+    context = {}
+    if results.exists():
+        context = _findings(results, notes_file, results.stat().st_mtime_ns, notes_file.stat().st_mtime_ns)
     return render(
         request,
         "backcast/findings.html",
@@ -113,23 +116,29 @@ def findings(request):
 
 
 @functools.lru_cache(maxsize=1)
-def _findings(results, version):
-    """The study's dataset only changes when it is exported again, so it is read once per version of the file."""
+def _findings(results: Path, notes_file: Path, *mtimes) -> dict:
+    """Read again whenever either file changes.
+
+    The download links are served by WhiteNoise, which outside debug mode keeps the file list it found at startup,
+    so restart the server after an export.
+    """
     result = study_findings(pd.read_csv(results))
+    notes = json.loads(notes_file.read_text())
     for row in result["summary"]:
         for kind in ("real", "placebo"):
-            row[kind]["percent"] = _share(row[kind]["share"])
-        row["placebo"]["range"] = f"{_share(row['placebo']['low'])} to {_share(row['placebo']['high'])}"
-    notes = json.loads((results.parent / "study.json").read_text())
+            row[kind]["percent"] = percent(row[kind]["share"], 1)
+        row["placebo"]["range"] = f"{percent(row['placebo']['low'], 1)} to {percent(row['placebo']['high'], 1)}"
     return {
         "notes": notes,
-        "untested": len(notes["study"]["excluded"]) + len(notes["study"]["not_loaded"]),
+        "study_rivals": len(notes["study"]["models"]) - 1,
         "summary": result["summary"],
         "horizons": result["horizons"],
         "models": [
             {
                 "name": model.name,
-                "cells": [{k: _share(v) for k, v in cell.items()} for cell in result["models"][model.key]],
+                "cells": [
+                    {kind: percent(share, 1) for kind, share in cell.items()} for cell in result["models"][model.key]
+                ],
             }
             for model in MODELS
             if model.key in result["models"]
@@ -138,20 +147,16 @@ def _findings(results, version):
             {
                 **row,
                 "best": MODELS_BY_KEY[row["best"]].name,
-                "change": _versus(row["best"], row["relative_mae"]),
-                "up": _versus(row["best"], row["relative_mae_up"]),
-                "down": _versus(row["best"], row["relative_mae_down"]),
-                "spa_p_value": _p_value(row["spa_p_value"]),
-                "period_change": _signed_percent(row["period_change"], 0),
+                "change": versus(row["best"], row["relative_mae"]),
+                "up": versus(row["best"], row["relative_mae_up"]),
+                "down": versus(row["best"], row["relative_mae_down"]),
+                "spa_p_value": p_value(row["spa_p_value"]),
+                "period_change": signed_percent(row["period_change"], 0),
             }
             for row in result["winners"]
         ],
         "chart": {"p_values": result["p_values"]},
     }
-
-
-def _share(value) -> str:
-    return f"{value:.1%}"
 
 
 def search(request):
@@ -217,7 +222,9 @@ def _run_page(request, symbol, horizon, run=None, error=None, status=200):
 
 def _progress(run) -> str:
     if run.status == Run.RUNNING:
-        return f"Forecasting from {ORIGINS} trading days with six models. This takes 10 to 30 seconds."
+        return (
+            f"Forecasting from {ORIGINS} trading days with {len(MODELS)} models. This usually takes 10 to 20 seconds."
+        )
     ahead = Run.objects.filter(
         status=Run.QUEUED, updated__lt=run.updated, updated__gte=timezone.now() - STALLED_AFTER
     ).count()

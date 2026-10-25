@@ -33,7 +33,7 @@ class SourceError(Exception):
 def normalize_symbol(raw: str) -> str:
     symbol = raw.strip().upper()
     if not SYMBOL_PATTERN.fullmatch(symbol):
-        raise DataError(f"“{raw.strip()[:20]}” is not a valid ticker symbol.")
+        raise DataError(f"'{raw.strip()[:20]}' is not a valid ticker symbol.")
     return symbol
 
 
