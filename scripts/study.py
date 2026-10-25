@@ -1,7 +1,7 @@
-"""The study: every model against naive on every S&P 500 member, and on each stock's placebo, at every horizon.
+"""The study: every model against naive on every S&P 500 member, and on placebos of each stock, at every horizon.
 
     uv run python scripts/study.py universe                      # save today's member list, once
-    uv run python scripts/study.py run --end 2026-10-23          # hours; stop it and rerun to carry on
+    uv run python scripts/study.py run --end 2026-10-23          # about a day; stop it and rerun to carry on
     uv run python scripts/study.py run --end 2026-10-23 --limit 10
     uv run python scripts/study.py export                        # write the dataset the Findings page reads
 
@@ -24,11 +24,10 @@ import pandas as pd
 from backcast.data import YEARS, DataError, load_prices
 from backcast.evaluate import HORIZONS, ORIGINS, REFIT, run_backtest
 from backcast.models import MODELS
-from backcast.study import SEED, placebo, placebo_signs, rows
+from backcast.study import SEEDS, placebo, placebo_signs, rows
 from backcast.version import code_version
 
 OUT = Path(__file__).resolve().parents[1] / "src/backcast/web/static/backcast/study"
-KINDS = ("real", "placebo")
 WIKIPEDIA = (
     "https://en.wikipedia.org/w/api.php?action=parse&page=List_of_S%26P_500_companies&prop=text|revid"
     "&format=json&formatversion=2"
@@ -67,19 +66,19 @@ def universe(args) -> None:
 def run_study(args) -> None:
     end = args.end.normalize()
     args.work.mkdir(parents=True, exist_ok=True)
-    settings = {"end": f"{end:%Y-%m-%d}", "seed": SEED}
+    settings = {"end": f"{end:%Y-%m-%d}", "seeds": list(SEEDS)}
     saved = args.work / "settings.json"
     if saved.exists() and json.loads(saved.read_text()) != settings:
         sys.exit(f"{args.work} holds a study with {saved.read_text().strip()}. Use another --work folder.")
     saved.write_text(json.dumps(settings))
 
     progress = args.work / "results.jsonl"
-    done = {(row["symbol"], row["horizon"], row["kind"]) for row in _read(progress)}
+    done = {(row["symbol"], row["horizon"], row.get("seed")) for row in _read(progress)}
     members = pd.read_csv(OUT / "universe.csv").symbol.tolist()[: args.limit]
-    signs = placebo_signs(end - pd.DateOffset(years=YEARS + 1), end)
+    signs = {seed: placebo_signs(end - pd.DateOffset(years=YEARS + 1), end, seed) for seed in SEEDS}
     with progress.open("a") as log:
         for number, symbol in enumerate(members, 1):
-            todo = [(kind, h) for kind in KINDS for h in args.horizons if (symbol, h, kind) not in done]
+            todo = [(seed, h) for seed in (None, *SEEDS) for h in args.horizons if (symbol, h, seed) not in done]
             if not todo:
                 continue
             try:
@@ -87,26 +86,29 @@ def run_study(args) -> None:
             except DataError as error:
                 print(f"[{number}/{len(members)}] {symbol}: not loaded, will retry next run. {error}")
                 continue
-            for kind, horizon in todo:
+            for seed, horizon in todo:
+                kind = "real" if seed is None else "placebo"
                 started = time.monotonic()
                 try:
                     if prices.index[-1] != end:
                         raise DataError(f"No close on {end:%d %b %Y}; the last is {prices.index[-1]:%d %b %Y}.")
-                    data = prices if kind == "real" else placebo(prices, signs)
-                    lines = rows(run_backtest(data, horizon), kind)
+                    data = prices if seed is None else placebo(prices, signs[seed])
+                    lines = rows(run_backtest(data, horizon), kind, seed)
                 except (DataError, ValueError) as error:
-                    lines = [{"symbol": symbol, "horizon": horizon, "kind": kind, "error": str(error)}]
+                    lines = [{"symbol": symbol, "horizon": horizon, "kind": kind, "seed": seed, "error": str(error)}]
                 for line in lines:
                     log.write(json.dumps({**line, "code": code_version()}) + "\n")
                 log.flush()
                 outcome = lines[0].get("error") or f"SPA p = {lines[0]['spa_p_value']:.3f}"
                 took = time.monotonic() - started
-                print(f"[{number}/{len(members)}] {symbol} {kind} {horizon}d, {took:.0f} s: {outcome}")
+                label = kind if seed is None else f"{kind} {seed}"
+                print(f"[{number}/{len(members)}] {symbol} {label} {horizon}d, {took:.0f} s: {outcome}")
 
 
 def export(args) -> None:
     frame = pd.DataFrame(_read(args.work / "results.jsonl"))
     frame["error"] = frame.get("error")
+    frame["seed"] = frame.seed.astype("Int64")  # real rows have none
     if (codes := frame.code.unique()).size > 1:
         sys.exit(f"The rows come from {codes.size} versions of the code ({', '.join(codes)}). Rerun in a new folder.")
     settings = json.loads((args.work / "settings.json").read_text())
