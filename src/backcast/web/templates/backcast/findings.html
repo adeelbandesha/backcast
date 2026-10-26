@@ -13,9 +13,9 @@
   <header class="findings-head">
     <h1>Findings</h1>
     <p class="lede">
-      Every member of the S&amp;P 500, backtested against the naive forecast at three horizons. Each stock also
-      ran on placebo copies of itself, on which no model can have a real edge. The placebos show
-      how often the test finds a winner by luck alone.
+      Every member of the S&amp;P 500 was backtested against the naive forecast at three horizons. Each stock was
+      also run on placebo copies of itself, where no model can have a real edge, to see how often the test finds a
+      winner by luck alone.
     </p>
   </header>
 
@@ -28,36 +28,39 @@
   <section class="study-section prose" aria-labelledby="found-title">
     <h2 id="found-title">What it found</h2>
     <p>
-      No model beat naive by enough to matter. In the run on closes to {{ study.end }}, the SPA test picked out 8
-      winners among 498 stocks at one day, 2 at five days and 2 at twenty days. On the placebos, where every win is
-      luck, the five draws produced 1 to 5 winners at one day, 0 to 7 at five days and 2 to 20 at twenty days.
+      None of the models beat naive by a useful margin. Out of 498 stocks, the SPA test flagged a winner on 8 at
+      the one-day horizon, 2 at five days and 2 at twenty days. The placebos, where any win is luck, gave 1 to 5
+      winners at one day depending on the draw, 0 to 7 at five days and 2 to 20 at twenty days. All of this uses
+      closes up to {{ study.end }}.
     </p>
     <p>
-      At five and twenty days the real stocks did no better than chance. At one day, 8 is more than any placebo draw
-      produced, so something is there, but it is small: on those 8 stocks the best model's error was 0.1% to 0.5%
-      below naive's. The test also turned out conservative. On the placebos, where every win is false, it found
-      a winner on 0.4% to 1.7% of stocks on average, well under the 5% a threshold of 0.05 suggests, which is why the placebos are the
-      yardstick here.
+      So at five and twenty days the real stocks did no better than the placebos. At one day, 8 is more than any
+      placebo draw gave, but the wins are tiny. On those 8 stocks the best model's error was only 0.1% to 0.5%
+      lower than naive's.
     </p>
     <p>
-      The one-day result has a plain cause. Over these two years, daily moves tended to reverse a little the next
-      day: the median correlation between one day's return and the next was −0.024, and 70% of stocks had a negative
-      one. Theta and ETS lean slightly against the last move, which pays when moves reverse. Theta's error was below
-      naive's on 59% of the real stocks and 33% of the placebos, whose random signs remove any reversal. At the
-      median stock it was only 0.02% below. The pattern is real, and too small to use.
+      The test was stricter than its 0.05 cutoff suggests. On the placebos it flagged 0.4% to 1.7% of stocks on
+      average, not the 5% you might expect, so the real results are compared with the placebos and not with 5%.
     </p>
     <p>
-      The bigger wins look like trends rather than skill. Valero won at one day and at twenty, both times through
-      Drift, which bets that the past trend carries on, and its price roughly tripled over the period. At twenty days
-      Drift's error was 11% below naive's when the close sat above its {{ trend_days }}-day average and 2% above it
-      when the close sat below. The other twenty-day winner, Phillips 66, is also an oil refiner.
+      Seven of the eight one-day wins went to Theta or ETS, and they come from small reversals. Over these two years,
+      a stock's daily move tended to be partly undone the next day. The median correlation between one day's return and
+      the next was −0.024, and it was negative for 70% of stocks. Theta and ETS forecasts sit a little behind the
+      latest price, so they gain when a move partly reverses. Theta's error was lower than naive's on 59% of the
+      real stocks but only 33% of the placebos, where the random signs wipe out any reversal. At the median stock
+      the difference was 0.02%, far too small to trade on.
     </p>
     <p>
-      LightGBM, the one machine-learning model, did worst: at the median stock its error was 2% to 3% above naive's,
-      and the Diebold-Mariano test didn't find it ahead on any stock at any horizon. Survivorship bias should have
-      helped Drift, since the stocks still in the index did well enough to stay, and that test found it ahead on
-      one stock in all. For these large US stocks over these two years, today's price was as good a forecast as any
-      of the models made.
+      Valero is a good example of a trend passing for skill. It won at one day and at twenty, both times with Drift,
+      which assumes the recent trend continues, and its price roughly tripled over the period. At twenty days
+      Drift's error was 11% lower than naive's when the price was above its {{ trend_days }}-day average, and 2%
+      higher when it was below. The other twenty-day winner, Phillips 66, is also an oil refiner.
+    </p>
+    <p>
+      LightGBM, the only machine-learning model, came last. At the median stock its error was 2% to 3% higher than
+      naive's, and the Diebold-Mariano test didn't put it ahead of naive on a single stock at any horizon. Drift
+      should have been helped by survivorship bias, since every stock here made it into the 2026 index, but the
+      same test put it ahead on just one stock.
     </p>
   </section>
 
@@ -92,8 +95,8 @@
     </div>
     <p class="section-note">
       A trend bet is a win where the best model forecast the same direction from at least {{ one_way }} of the days,
-      and the price went that way over the period. It pays while the trend lasts and loses as steadily once it
-      turns.
+      and the price went that way over the period. A model like that does well for as long as the trend lasts and
+      badly once it reverses.
     </p>
   </section>
 
@@ -201,13 +204,14 @@
       <a href="{% url 'method' %}">method page</a> has the details.
     </p>
     <p>
-      A placebo replays a stock's own daily moves with random signs. Every move keeps its size, so the volatility,
-      its clustering and the fat tails are real; only the direction is a coin toss, and no model can forecast that.
-      Each date gets one coin toss for all stocks, which keeps stocks that moved together moving together.
+      A placebo replays a stock's own daily moves with random signs. Each move keeps its size, so the placebo is
+      just as volatile as the real stock, with the same calm and wild stretches. Only the direction is random, and
+      no model can forecast a coin toss. Each date gets one coin toss for all stocks, so stocks that moved together
+      still do.
     </p>
     <p>
-      It also hands the whole market a single random path. If that path happens to trend, trend bets win on many
-      placebos at once, so one draw could make chance look generous or stingy. The placebo was drawn
+      That also gives the whole market a single random path. If that path happens to trend, trend bets win on many
+      placebos at once, so a single draw could make luck look more or less common than it is. The placebo was drawn
       {{ study.seeds|length|apnumber }} times, from the seeds {{ study.seeds|join:", " }}.
     </p>
     <h3>Limits</h3>
