@@ -64,8 +64,9 @@ pip install -e .
 backcast run SPY --horizon 5
 ```
 
-A run takes 10 to 20 seconds on a four-core laptop; the work is spread across your CPU cores. This is a real run
-from 23 October 2026:
+A backtest needs roughly 40 to 80 seconds of CPU time, spread across every core, so a four-core machine finishes
+in 10 to 20 seconds. Everything runs on the CPU; a GPU isn't used and doesn't help. This is a real run from
+23 October 2026:
 
 ```
 SPY: 5-day forecasts from 504 trading days
@@ -305,12 +306,15 @@ To reproduce it, run the study from a clean checkout of one commit, so every row
 ```bash
 git worktree add --detach ../backcast-study main
 cd ../backcast-study && uv sync
-systemd-inhibit --what=sleep:idle uv run python scripts/study.py run --end 2026-10-23
+uv run python scripts/study.py run --end 2026-10-23
 uv run python scripts/study.py export
 ```
 
-The run takes about 25 hours on four cores: 18 backtests per stock (the real prices and five placebos, at three
-horizons), at about ten seconds each. Stop it whenever you like and run the same command again to carry on.
+The study is 18 backtests per stock (the real prices and five placebos, at three horizons), about 9,000 in all,
+or roughly 100 CPU-hours. That is about a day on four cores, and less in proportion with more. A GPU doesn't
+help: the models are statistical fits and a small LightGBM, all on the CPU. Keep the machine from sleeping while
+it runs (on Linux, put `systemd-inhibit --what=sleep:idle` in front of the command). Stop it whenever you like
+and run the same command again to carry on.
 Prices are saved in the work folder the first time they load, so a resumed run and every placebo use exactly the
 same data. A download that fails is retried on the next run. `export` refuses rows from more than one version of
 the code.
@@ -331,8 +335,8 @@ uv run ruff format --check .
 ```
 
 `scripts/refit_check.py` re-runs the experiment behind the refit interval: it backtests AAPL, KO and NVDA with models
-re-estimated every day, every 5 days and every 20, and reports how far the results move. It takes about half an hour
-on four cores.
+re-estimated every day, every 5 days and every 20, and reports how far the results move. It needs about two
+CPU-hours, so half an hour on four cores.
 
 CI runs the same three commands on every pull request. It also checks the JavaScript for syntax errors, runs
 Django's system checks, builds the wheel to make sure the templates and static files are still packaged, and
