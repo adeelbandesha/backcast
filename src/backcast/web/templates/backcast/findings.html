@@ -25,6 +25,42 @@
     </div>
   {% else %}{% with study=notes.study %}
 
+  <section class="study-section prose" aria-labelledby="found-title">
+    <h2 id="found-title">What it found</h2>
+    <p>
+      No model beat naive by enough to matter. In the run on closes to {{ study.end }}, the SPA test picked out 8
+      winners among 498 stocks at one day, 2 at five days and 2 at twenty days. On the placebos, where every win is
+      luck, the five draws produced 1 to 5 winners at one day, 0 to 7 at five days and 2 to 20 at twenty days.
+    </p>
+    <p>
+      At five and twenty days the real stocks did no better than chance. At one day, 8 is more than any placebo draw
+      produced, so something is there, but it is small: on those 8 stocks the best model's error was 0.1% to 0.5%
+      below naive's. The test also turned out conservative. On the placebos, where every win is false, it found
+      a winner on 0.4% to 1.7% of stocks on average, well under the 5% a threshold of 0.05 suggests, which is why the placebos are the
+      yardstick here.
+    </p>
+    <p>
+      The one-day result has a plain cause. Over these two years, daily moves tended to reverse a little the next
+      day: the median correlation between one day's return and the next was −0.024, and 70% of stocks had a negative
+      one. Theta and ETS lean slightly against the last move, which pays when moves reverse. Theta's error was below
+      naive's on 59% of the real stocks and 33% of the placebos, whose random signs remove any reversal. At the
+      median stock it was only 0.02% below. The pattern is real, and too small to use.
+    </p>
+    <p>
+      The bigger wins look like trends rather than skill. Valero won at one day and at twenty, both times through
+      Drift, which bets that the past trend carries on, and its price roughly tripled over the period. At twenty days
+      Drift's error was 11% below naive's when the close sat above its {{ trend_days }}-day average and 2% above it
+      when the close sat below. The other twenty-day winner, Phillips 66, is also an oil refiner.
+    </p>
+    <p>
+      LightGBM, the one machine-learning model, did worst: at the median stock its error was 2% to 3% above naive's,
+      and the Diebold-Mariano test didn't find it ahead on any stock at any horizon. Survivorship bias should have
+      helped Drift, since the stocks still in the index did well enough to stay, and that test found it ahead on
+      one stock in all. For these large US stocks over these two years, today's price was as good a forecast as any
+      of the models made.
+    </p>
+  </section>
+
   <section class="study-section" aria-labelledby="share-title">
     <h2 id="share-title">How often a model won</h2>
     <p class="section-lede">

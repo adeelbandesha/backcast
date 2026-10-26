@@ -291,6 +291,11 @@ To see what chance alone produces, every stock is also backtested on placebos: i
 random signs, drawn five times. Any winner the tests find on a placebo is a false positive. The Findings page
 (`/findings/`) has the results and explains the placebo in full.
 
+The result, on closes to 23 October 2026: no model beat naive by enough to matter. Of 498 stocks, the SPA test
+found a winner for 8 at one day, 2 at five days and 2 at twenty days, against 1 to 5, 0 to 7 and 2 to 20 on the
+placebo draws. The one-day wins are real but tiny (0.1% to 0.5% less error than naive) and come from daily moves
+reversing slightly; the longer-horizon ones look like trends.
+
 The member list is today's, taken from Wikipedia (the revision is recorded in `study.json`). That adds survivorship
 bias: companies that fell out of the index over the period aren't in it, and the ones that are did well enough to
 stay.

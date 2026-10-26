@@ -3,5 +3,121 @@
     "source": "https://en.wikipedia.org/w/index.php?title=List_of_S%26P_500_companies&oldid=1381317423",
     "retrieved": "2026-10-24",
     "members": 503
+  },
+  "study": {
+    "end": "2026-10-23",
+    "seeds": [
+      20261024,
+      20261025,
+      20261026,
+      20261027,
+      20261028
+    ],
+    "code": "0.1.0+d059fa2",
+    "years": 5,
+    "origins": 504,
+    "refit": 20,
+    "models": [
+      "ets",
+      "naive",
+      "arima",
+      "theta",
+      "drift",
+      "lightgbm"
+    ],
+    "tested": 498,
+    "excluded": [
+      {
+        "symbol": "FDXF",
+        "horizon": 1,
+        "seed": null,
+        "reason": "Need at least 600 prices for a backtest, got 105."
+      },
+      {
+        "symbol": "FDXF",
+        "horizon": 5,
+        "seed": null,
+        "reason": "Need at least 604 prices for a backtest, got 105."
+      },
+      {
+        "symbol": "FDXF",
+        "horizon": 20,
+        "seed": null,
+        "reason": "Need at least 619 prices for a backtest, got 105."
+      },
+      {
+        "symbol": "HONA",
+        "horizon": 1,
+        "seed": null,
+        "reason": "Need at least 600 prices for a backtest, got 92."
+      },
+      {
+        "symbol": "HONA",
+        "horizon": 5,
+        "seed": null,
+        "reason": "Need at least 604 prices for a backtest, got 92."
+      },
+      {
+        "symbol": "HONA",
+        "horizon": 20,
+        "seed": null,
+        "reason": "Need at least 619 prices for a backtest, got 92."
+      },
+      {
+        "symbol": "Q",
+        "horizon": 1,
+        "seed": null,
+        "reason": "Need at least 600 prices for a backtest, got 250."
+      },
+      {
+        "symbol": "Q",
+        "horizon": 5,
+        "seed": null,
+        "reason": "Need at least 604 prices for a backtest, got 250."
+      },
+      {
+        "symbol": "Q",
+        "horizon": 20,
+        "seed": null,
+        "reason": "Need at least 619 prices for a backtest, got 250."
+      },
+      {
+        "symbol": "SNDK",
+        "horizon": 1,
+        "seed": null,
+        "reason": "Need at least 600 prices for a backtest, got 426."
+      },
+      {
+        "symbol": "SNDK",
+        "horizon": 5,
+        "seed": null,
+        "reason": "Need at least 604 prices for a backtest, got 426."
+      },
+      {
+        "symbol": "SNDK",
+        "horizon": 20,
+        "seed": null,
+        "reason": "Need at least 619 prices for a backtest, got 426."
+      },
+      {
+        "symbol": "VYLR",
+        "horizon": 1,
+        "seed": null,
+        "reason": "Need at least 600 prices for a backtest, got 17."
+      },
+      {
+        "symbol": "VYLR",
+        "horizon": 5,
+        "seed": null,
+        "reason": "Need at least 604 prices for a backtest, got 17."
+      },
+      {
+        "symbol": "VYLR",
+        "horizon": 20,
+        "seed": null,
+        "reason": "Need at least 619 prices for a backtest, got 17."
+      }
+    ],
+    "not_loaded": []
   }
 }
