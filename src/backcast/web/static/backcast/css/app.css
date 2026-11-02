@@ -252,6 +252,7 @@ input[aria-invalid="true"] { border-color: var(--worse); }
   padding-bottom: 20px; border-bottom: 1px solid var(--ink);
 }
 .symbol { font-family: var(--mono); font-weight: 500; letter-spacing: -0.04em; }
+.report-tabs { display: flex; flex-wrap: wrap; gap: 8px 48px; }
 .horizon-tabs { display: flex; gap: 24px; font-size: 0.9375rem; }
 .horizon-tabs a { padding-block: 6px; color: var(--ink-2); text-decoration: none; border-bottom: 2px solid transparent; }
 .horizon-tabs a:hover { color: var(--ink); }
@@ -324,6 +325,7 @@ input[aria-invalid="true"] { border-color: var(--worse); }
 .key-line { width: 16px; height: 2px; border-radius: 1px; background: currentColor; }
 .key-band { width: 16px; height: 10px; background: currentColor; opacity: 0.18; }
 .key-rect { width: 10px; height: 10px; border-radius: 2px; background: currentColor; }
+.key-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.6; }
 
 .chart-tip {
   position: absolute; z-index: 2; top: 0; pointer-events: none;

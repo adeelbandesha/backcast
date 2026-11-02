@@ -31,6 +31,16 @@ class Run(models.Model):
         return reverse("run", args=[self.id])
 
     @property
+    def target(self) -> str:
+        """What was forecast: "price" or "volatility". Runs from before the volatility track have no target."""
+        return self.settings.get("target", "price")
+
+    @property
+    def latest_url(self) -> str:
+        """The same backtest on the latest prices, which may be a newer run."""
+        return f"{reverse('backtest' if self.target == 'price' else 'volatility', args=[self.symbol])}?h={self.horizon}"
+
+    @property
     def stalled(self) -> bool:
         return self.status in (self.QUEUED, self.RUNNING) and timezone.now() - self.updated > STALLED_AFTER
 

@@ -1,8 +1,8 @@
 {% extends "backcast/base.html" %}
 {% load static %}
 
-{% block title %}{{ symbol }} · {{ horizon }}-day backtest · Backcast{% endblock %}
-{% block description %}How forecasting models did against the naive forecast for {{ symbol }}, {{ horizon }} trading day{{ horizon|pluralize }} ahead.{% endblock %}
+{% block title %}{{ symbol }} · {{ horizon }}-day {% if target == 'volatility' %}volatility {% endif %}backtest · Backcast{% endblock %}
+{% block description %}How forecasting models did against the naive forecast of {{ symbol }}'s {% if target == 'volatility' %}volatility{% else %}price{% endif %}, {{ horizon }} trading day{{ horizon|pluralize }} ahead.{% endblock %}
 {% block head %}
   <script src="{% static 'backcast/vendor/d3.min.js' %}" defer></script>
   <script src="{% static 'backcast/vendor/plot.umd.min.js' %}" defer></script>
@@ -12,11 +12,17 @@
 <article class="report">
   <header class="report-head">
     <h1 class="symbol">{{ symbol }}</h1>
-    <nav class="horizon-tabs" aria-label="Forecast horizon">
-      {% for h in horizons %}
-        <a href="{% url 'backtest' symbol %}?h={{ h }}"{% if h == horizon %} aria-current="page"{% endif %}>{{ h }} day{{ h|pluralize }}</a>
-      {% endfor %}
-    </nav>
+    <div class="report-tabs">
+      <nav class="horizon-tabs" aria-label="What to forecast">
+        <a href="{{ tabs.price }}"{% if target == 'price' %} aria-current="page"{% endif %}>Price</a>
+        <a href="{{ tabs.volatility }}"{% if target == 'volatility' %} aria-current="page"{% endif %}>Volatility</a>
+      </nav>
+      <nav class="horizon-tabs" aria-label="Forecast horizon">
+        {% for h in horizons %}
+          <a href="{% if target == 'volatility' %}{% url 'volatility' symbol %}{% else %}{% url 'backtest' symbol %}{% endif %}?h={{ h }}"{% if h == horizon %} aria-current="page"{% endif %}>{{ h }} day{{ h|pluralize }}</a>
+        {% endfor %}
+      </nav>
+    </div>
   </header>
 
   <div id="results" class="results"{% if pending %} data-src="{% url 'run-results' run.id %}" aria-busy="true"{% endif %}>

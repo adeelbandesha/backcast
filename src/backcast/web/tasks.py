@@ -1,6 +1,7 @@
 """Backtests run here, in the Huey worker, and each one is saved as a Run that a permalink can show later."""
 
 import hashlib
+import itertools
 import json
 import logging
 import math
@@ -11,6 +12,7 @@ from django.template.loader import render_to_string
 from huey import crontab
 from huey.contrib.djhuey import db_periodic_task, db_task
 
+from .. import volatility
 from ..data import YEARS, DataError, load_prices, source_name
 from ..evaluate import (
     HORIZONS,
@@ -25,11 +27,12 @@ from ..evaluate import (
 )
 from ..models import LEVEL, MODELS, MODELS_BY_KEY
 from ..version import code_version
-from .formats import p_value, percent, signed_percent, versus
+from .formats import p_value, percent, signed_percent, tone, versus
 from .models import Run
 
 PRICES_TTL = 60 * 60
 EXAMPLES = ("AAPL", "MSFT", "NVDA", "SPY", "KO", "TSLA")
+TARGETS = ("price", "volatility")
 log = logging.getLogger(__name__)
 
 
@@ -42,8 +45,8 @@ def cached_prices(symbol: str, fresh: bool = False):
     return prices
 
 
-def run_settings(horizon: int) -> dict:
-    return {
+def run_settings(horizon: int, target: str = "price") -> dict:
+    settings = {
         "horizon": horizon,
         "origins": ORIGINS,
         "refit": REFIT,
@@ -52,16 +55,20 @@ def run_settings(horizon: int) -> dict:
         "level": LEVEL,
         "models": [model.key for model in MODELS],
     }
+    if target == "volatility":  # price runs leave the key out, so their ids are the ones they had before
+        del settings["level"]
+        settings.update(target=target, models=[model.key for model in volatility.MODELS])
+    return settings
 
 
-def fingerprint(prices, horizon: int) -> str:
+def fingerprint(prices, horizon: int, target: str = "price") -> str:
     """The run id: a hash of every input that can change the results."""
     digest = hashlib.sha256()
     inputs = {
         "symbol": prices.name,
         "calendar": prices.attrs.get("calendar"),
         "source": source_name(),
-        "settings": run_settings(horizon),
+        "settings": run_settings(horizon, target),
         "code": code_version(),
     }
     digest.update(json.dumps(inputs, sort_keys=True).encode())
@@ -70,7 +77,7 @@ def fingerprint(prices, horizon: int) -> str:
     return digest.hexdigest()[:16]
 
 
-def submit(run_id: str, prices, horizon: int) -> Run:
+def submit(run_id: str, prices, horizon: int, target: str = "price") -> Run:
     """Save the run as queued and hand it to the worker. Callers check first that it isn't saved or running."""
     run, _ = Run.objects.update_or_create(
         pk=run_id,
@@ -81,7 +88,7 @@ def submit(run_id: str, prices, horizon: int) -> Run:
             "source": source_name(),
             "data_date": prices.index[-1].date(),
             "code_version": code_version(),
-            "settings": run_settings(horizon),
+            "settings": run_settings(horizon, target),
         },
     )
     execute(run_id, prices)
@@ -96,8 +103,12 @@ def execute(run_id: str, prices):
     run.status = Run.RUNNING
     run.save(update_fields=["status", "updated"])
     try:
-        results = _summarize(run_backtest(prices, run.horizon))
-        run.html = render_to_string("backcast/_results.html", {"results": results})
+        if run.target == "volatility":
+            results = _summarize_volatility(volatility.run_backtest(prices, run.horizon))
+            run.html = render_to_string("backcast/_volatility_results.html", {"results": results})
+        else:
+            results = _summarize(run_backtest(prices, run.horizon))
+            run.html = render_to_string("backcast/_results.html", {"results": results})
         run.status = Run.DONE
     except (DataError, ValueError) as error:  # their messages are written for people
         run.status, run.error = Run.FAILED, str(error)
@@ -110,18 +121,20 @@ def execute(run_id: str, prices):
 # Weekdays at 22:30 UTC, after the US close in both summer (20:00 UTC) and winter (21:00 UTC).
 @db_periodic_task(crontab(minute="30", hour="22", day_of_week="1-5"))
 def precompute():
-    """Queue the home page's examples at every horizon, so they're ready before anyone asks."""
+    """Queue the home page's examples at every horizon, for price and volatility, so they're ready before anyone
+    asks.
+    """
     for symbol in EXAMPLES:
         try:
             prices = cached_prices(symbol, fresh=True)
         except DataError as error:
             log.warning("Skipped %s in the nightly run: %s", symbol, error)
             continue
-        for horizon in HORIZONS:
-            run_id = fingerprint(prices, horizon)
+        for horizon, target in itertools.product(HORIZONS, TARGETS):
+            run_id = fingerprint(prices, horizon, target)
             run = Run.objects.filter(pk=run_id).first()
             if run is None or run.failed:
-                submit(run_id, prices, horizon)
+                submit(run_id, prices, horizon, target)
 
 
 def _summarize(report) -> dict:
@@ -206,6 +219,71 @@ def _summarize(report) -> dict:
         "calendar_known": report.prices.attrs.get("calendar") is not None,
         "chart": chart,
     }
+
+
+def _summarize_volatility(report) -> dict:
+    """Everything _volatility_results.html and its charts need. Volatility is shown annualized, as it is quoted."""
+    verdict, horizon = report.verdict, report.horizon
+    rows = [
+        {
+            "key": row.model,
+            "name": volatility.MODELS_BY_KEY[row.model].name,
+            "family": volatility.MODELS_BY_KEY[row.model].family,
+            "qlike": f"{row.qlike:.3f}".replace("-", "−"),
+            "gain": _gain(row.model, row.gain),
+            "win_rate": percent(row.win_rate),
+            "volatility": percent(row.volatility, 1),
+            "p_value": p_value(row.p_adjusted),
+            "significant": row.p_adjusted < SIGNIFICANCE,
+            "best": row.model == verdict.best,
+        }
+        for row in report.board.itertuples()
+    ]
+    results = report.results
+    chart = {
+        "target": "volatility",
+        "horizon": horizon,
+        "best": verdict.best,
+        "models": [{"key": row["key"], "name": row["name"]} for row in rows],
+        "origins": {
+            key: {
+                "origin": _dates(group.origin),
+                "target": _dates(group.target),
+                **{
+                    column: _numbers(volatility.annualized(group[column], horizon))
+                    for column in ("actual", "predicted")
+                },
+                "error": [round(float(v), 6) for v in group.error],
+            }
+            for key, group in results.groupby("model", sort=False)
+        },
+    }
+    return {
+        "symbol": report.prices.name,
+        "horizon": horizon,
+        "headline": volatility.headline(verdict),
+        "long_run_note": volatility.long_run_note(verdict),
+        "verdict": verdict,
+        "rows": rows,
+        "rivals": len(rows) - 1,
+        "spa_p_value": p_value(verdict.p_value),
+        "long_run_p_value": p_value(verdict.long_run_p_value),
+        "significance": SIGNIFICANCE,
+        "realized": percent(verdict.realized, 1),
+        "as_of": report.prices.index[-1].date(),
+        "first_origin": results.origin.min().date(),
+        "last_target": results.target.max().date(),
+        "origins": verdict.origins,
+        "chart": chart,
+    }
+
+
+def _gain(key, gain) -> dict:
+    """QLIKE below naive's is better; shown with the sign of the change in loss, like the price leaderboard."""
+    if key == "naive":
+        return {"text": "—", "tone": ""}
+    change = round(-gain, 3)
+    return {"text": f"{change:+.3f}".replace("-", "−") if change else "0.000", "tone": tone(change)}
 
 
 def _dates(index) -> list[str]:

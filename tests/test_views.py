@@ -102,6 +102,7 @@ def test_run_id_fingerprints_the_inputs(prices, monkeypatch):
     series = tasks.load_prices("MSFT")
     assert tasks.fingerprint(series, 5) == tasks.fingerprint(series.copy(), 5)
     assert tasks.fingerprint(series, 5) != tasks.fingerprint(series, 20)
+    assert tasks.fingerprint(series, 5) != tasks.fingerprint(series, 5, "volatility")
     assert tasks.fingerprint(series, 5) != tasks.fingerprint(series.rename("AAPL"), 5)
     changed = series.copy()
     changed.iloc[100] += 0.01
@@ -189,7 +190,8 @@ def test_a_stalled_run_is_started_again(client, prices):
 def test_nightly_precompute_saves_the_examples(client, prices, monkeypatch):
     monkeypatch.setattr(tasks, "EXAMPLES", ("SPY",))
     tasks.precompute.call_local()
-    assert sorted(Run.objects.values_list("horizon", "status")) == [(1, "done"), (5, "done"), (20, "done")]
+    runs = sorted((run.target, run.horizon, run.status) for run in Run.objects.all())
+    assert runs == [(target, h, "done") for target in ("price", "volatility") for h in (1, 5, 20)]
     results_page(client, "SPY", h="20")
     assert prices == ["SPY"]  # the precompute's prices were cached, so the page found its run
 
@@ -206,8 +208,32 @@ def test_search_does_not_cache_empty_results(client, monkeypatch):
     assert client.get("/api/search/", {"q": "apple"}).json()["results"][0]["symbol"] == "AAPL"
 
 
+def test_volatility_backtest_is_its_own_run_on_the_same_prices(client, prices):
+    response = client.get("/volatility/MSFT/", {"h": "5"})
+    assert response.status_code == 302 and response["Location"].startswith("/runs/")
+    page = client.get(response["Location"])
+    assert "forecast volatility" in page.text and "QLIKE" in page.text and "long-run average" in page.text
+    data = chart_data(page)
+    assert data["target"] == "volatility" and len(data["origins"]["garch"]["origin"]) == 504
+    run = Run.objects.get()
+    assert (run.target, run.latest_url) == ("volatility", "/volatility/MSFT/?h=5")
+    assert "level" not in run.settings and "About this run" in page.text
+    assert 'href="/backtest/MSFT/?h=5"' in page.text  # the Price tab
+
+    price = client.get("/backtest/MSFT/", {"h": "5"})
+    assert price["Location"] != response["Location"]
+    assert prices == ["MSFT"]  # both runs used the cached prices
+
+
+def test_home_redirects_to_the_volatility_backtest(client):
+    response = client.get("/", {"symbol": "aapl", "h": "20", "t": "volatility"})
+    assert response["Location"] == "/volatility/AAPL/?h=20"
+    assert client.get("/", {"symbol": "aapl", "t": "nonsense"})["Location"] == "/backtest/AAPL/?h=5"
+
+
 def test_static_pages(client):
     assert "LightGBM" in client.get("/models/").text
+    assert "GJR-GARCH" in client.get("/models/").text
     assert "Diebold-Mariano" in client.get("/method/").text
 
 

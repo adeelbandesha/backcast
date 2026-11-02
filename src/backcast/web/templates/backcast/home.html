@@ -16,6 +16,15 @@
   <form class="query" action="{% url 'home' %}" method="get" role="search" novalidate>
     {% include "backcast/_combobox.html" with field_id="symbol" label="Ticker or company" value=symbol describedby="symbol-error" invalid=error required=True %}
     <fieldset class="segmented">
+      <legend>Forecast</legend>
+      <div class="segmented-options">
+        <input type="radio" name="t" value="price" id="t-price" checked>
+        <label for="t-price">Price</label>
+        <input type="radio" name="t" value="volatility" id="t-volatility">
+        <label for="t-volatility">Volatility</label>
+      </div>
+    </fieldset>
+    <fieldset class="segmented">
       <legend>Forecast horizon</legend>
       <div class="segmented-options">
         {% for h in horizons %}

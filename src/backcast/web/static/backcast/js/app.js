@@ -193,6 +193,8 @@ const formatDate = window.d3?.utcFormat("%-d %b %Y");
 const formatPrice = window.d3?.format(",.2f");
 const formatPoints = (value) => window.d3.format("+,.1f")(value).replace("-", "−");
 const formatError = window.d3?.format(".2%");
+const formatVolatility = window.d3?.format(".1%");
+const formatLoss = (value) => window.d3.format("+,.3f")(value).replace("-", "−");
 
 function tokens() {
   const style = getComputedStyle(root);
@@ -216,11 +218,17 @@ function initCharts() {
   const names = Object.fromEntries(data.models.map((model) => [model.key, model.name]));
   const picker = document.querySelector(".model-picker");
   const charts = document.querySelector(".charts");
+  // How the running total reads: log-price errors in percentage points, or QLIKE losses as they are.
+  const units =
+    data.target === "volatility"
+      ? { scale: 1, total: formatLoss, value: formatVolatility, error: formatLoss, actual: "Realized", score: "QLIKE", better: "Lower loss than naive", worse: "Higher loss than naive" }
+      : { scale: 100, total: formatPoints, value: formatPrice, error: formatError, actual: "Actual", score: "error", better: "Closer than naive", worse: "Further than naive" };
   const draw = () => {
     const key = picker.querySelector("input:checked")?.value ?? data.best;
     const t = tokens();
-    drawPrice(charts.querySelector('[data-chart="price"]'), data, key, names[key], t);
-    drawCumulative(charts.querySelector('[data-chart="cumulative"]'), data, key, names[key], t);
+    if (data.target === "volatility") drawVolatility(charts.querySelector('[data-chart="volatility"]'), data, key, names[key], t);
+    else drawPrice(charts.querySelector('[data-chart="price"]'), data, key, names[key], t);
+    drawCumulative(charts.querySelector('[data-chart="cumulative"]'), data, key, names[key], t, units);
   };
   picker.addEventListener("change", draw);
   redrawOn(charts, draw);
@@ -251,10 +259,10 @@ function baseOptions(plotNode, t, height) {
   };
 }
 
-function axes(t, width) {
+function axes(t, width, yFormat) {
   return [
     Plot.gridY({ stroke: t.rule, strokeOpacity: 1 }),
-    Plot.axisY({ tickSize: 0, tickPadding: 8, label: null }),
+    Plot.axisY({ tickSize: 0, tickPadding: 8, label: null, tickFormat: yFormat }),
     Plot.axisX({ tickSize: 0, tickPadding: 10, label: null, ticks: Math.max(2, Math.floor(width / 110)) }),
   ];
 }
@@ -408,13 +416,13 @@ function drawPrice(figure, data, key, name, t) {
 }
 
 // Welch and Goyal's cumulative error difference: rises while the model beats naive, falls while it loses.
-function drawCumulative(figure, data, key, name, t) {
+function drawCumulative(figure, data, key, name, t, units) {
   const plotNode = figure.querySelector(".chart-plot");
   const series = data.origins[key];
   const naive = data.origins.naive;
   let total = 0;
   const rows = series.origin.map((origin, i) => {
-    const gain = 100 * (naive.error[i] - series.error[i]); // log errors, in percentage points
+    const gain = units.scale * (naive.error[i] - series.error[i]);
     total += gain;
     return {
       date: parseDate(origin),
@@ -432,7 +440,7 @@ function drawCumulative(figure, data, key, name, t) {
   const options = baseOptions(plotNode, t, 300);
   const chart = Plot.plot({
     ...options,
-    y: { label: null, nice: true, tickFormat: formatPoints },
+    y: { label: null, nice: true, tickFormat: units.total },
     marks: [
       ...axes(t, options.width),
       Plot.ruleY([0], { stroke: t.ruleStrong }),
@@ -445,26 +453,76 @@ function drawCumulative(figure, data, key, name, t) {
   hover(plotNode, chart, rows, t, (row) => ({
     title: `Forecast on ${formatDate(row.date)} for ${formatDate(row.target)}`,
     items: [
-      { kind: "line", color: t.accent, value: row.total, text: formatPoints(row.total), label: "Running total" },
-      { kind: "line", color: row.gain >= 0 ? t.better : t.worse, value: null, text: formatPoints(row.gain), label: row.gain >= 0 ? "Closer than naive" : "Further than naive" },
-      { kind: "line", color: t.accent, value: null, text: formatError(row.model), label: `${name} error` },
-      { kind: "line", color: t.muted, value: null, text: formatError(row.naive), label: "Naive error" },
+      { kind: "line", color: t.accent, value: row.total, text: units.total(row.total), label: "Running total" },
+      { kind: "line", color: row.gain >= 0 ? t.better : t.worse, value: null, text: units.total(row.gain), label: row.gain >= 0 ? units.better : units.worse },
+      { kind: "line", color: t.accent, value: null, text: units.error(row.model), label: `${name} ${units.score}` },
+      { kind: "line", color: t.muted, value: null, text: units.error(row.naive), label: `Naive ${units.score}` },
     ],
   }));
 
   dataTable(
     figure,
-    ["Forecast on", "Scored on", "Actual", `${name} forecast`, "Naive forecast", `${name} error`, "Naive error", "Running total"],
+    ["Forecast on", "Scored on", units.actual, `${name} forecast`, "Naive forecast", `${name} ${units.score}`, `Naive ${units.score}`, "Running total"],
     rows.map((row) => [
       formatDate(row.date),
       formatDate(row.target),
-      formatPrice(row.actual),
-      formatPrice(row.predicted),
-      formatPrice(row.naivePredicted),
-      formatError(row.model),
-      formatError(row.naive),
-      formatPoints(row.total),
+      units.value(row.actual),
+      units.value(row.predicted),
+      units.value(row.naivePredicted),
+      units.error(row.model),
+      units.error(row.naive),
+      units.total(row.total),
     ]),
+  );
+}
+
+// Each day's volatility forecast against the volatility that came, all annualized.
+function drawVolatility(figure, data, key, name, t) {
+  const plotNode = figure.querySelector(".chart-plot");
+  const series = data.origins[key];
+  const naive = data.origins.naive;
+  const rows = series.origin.map((origin, i) => ({
+    date: parseDate(origin),
+    target: parseDate(series.target[i]),
+    realized: series.actual[i],
+    model: series.predicted[i],
+    naive: naive.predicted[i],
+  }));
+  // The largest single moves would flatten every forecast line, so the top of the chart stops short of them.
+  const top = Math.max(d3.max(rows, (row) => Math.max(row.model, row.naive)), d3.quantile(rows, 0.98, (row) => row.realized));
+
+  const options = baseOptions(plotNode, t, 320);
+  const chart = Plot.plot({
+    ...options,
+    y: { label: null, domain: [0, top * 1.05] },
+    marks: [
+      ...axes(t, options.width, (value) => d3.format(".0%")(value)),
+      Plot.dot(rows, { x: "date", y: "realized", r: 1.5, fill: t.ink, fillOpacity: 0.35, clip: true }),
+      Plot.lineY(rows, { x: "date", y: "naive", stroke: t.muted, strokeWidth: 2 }),
+      Plot.lineY(rows, { x: "date", y: "model", stroke: t.accent, strokeWidth: 2 }),
+    ],
+  });
+  chart.setAttribute("aria-label", `${name} and naive volatility forecasts against realized volatility over ${rows.length} days`);
+  plotNode.replaceChildren(chart);
+
+  hover(plotNode, chart, rows, t, (row) => ({
+    title: `Forecast on ${formatDate(row.date)} to ${formatDate(row.target)}`,
+    items: [
+      { kind: "line", color: t.accent, value: row.model, text: formatVolatility(row.model), label: name },
+      { kind: "line", color: t.muted, value: row.naive, text: formatVolatility(row.naive), label: "Naive" },
+      { kind: "dot", color: t.ink, value: Math.min(row.realized, top), text: formatVolatility(row.realized), label: "Realized" },
+    ],
+  }));
+
+  legend(figure, [
+    ["line", t.accent, name],
+    ["line", t.muted, "Naive"],
+    ["dot", t.ink, "Realized"],
+  ]);
+  dataTable(
+    figure,
+    ["Forecast on", "To", name, "Naive", "Realized"],
+    rows.map((row) => [formatDate(row.date), formatDate(row.target), formatVolatility(row.model), formatVolatility(row.naive), formatVolatility(row.realized)]),
   );
 }
 

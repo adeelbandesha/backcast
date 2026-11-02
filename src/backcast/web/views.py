@@ -14,13 +14,14 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 
+from .. import volatility
 from ..data import DataError, normalize_symbol, search_symbols, source_name
 from ..evaluate import HORIZONS, MIN_HISTORY, MIN_ORIGINS, ORIGINS, REFIT, SIGNIFICANCE, TREND_DAYS, required_prices
 from ..models import LEVEL, MODELS, MODELS_BY_KEY
 from ..study import findings as study_findings
 from .formats import p_value, percent, signed_percent, versus
 from .models import STALLED_AFTER, Run
-from .tasks import EXAMPLES, cached_prices, fingerprint, submit
+from .tasks import EXAMPLES, TARGETS, cached_prices, fingerprint, submit
 
 DEFAULT_HORIZON = 5
 SEARCH_TTL = 60 * 60
@@ -37,11 +38,12 @@ def home(request):
             symbol = normalize_symbol(request.GET["symbol"])
         except DataError as error:
             return _home(request, error=str(error), status=400)
-        return redirect(_backtest_url(symbol, _horizon(request)))
+        target = request.GET.get("t") if request.GET.get("t") in TARGETS else "price"
+        return redirect(_backtest_url(symbol, _horizon(request), target))
     return _home(request)
 
 
-def backtest(request, symbol):
+def backtest(request, symbol, target="price"):
     """Redirects to the run for today's prices, starting it if it hasn't run yet."""
     try:
         canonical = normalize_symbol(symbol)
@@ -49,28 +51,28 @@ def backtest(request, symbol):
         return _home(request, error=str(error), status=404)
     horizon = _horizon(request)
     if canonical != symbol:
-        return redirect(_backtest_url(canonical, horizon))
+        return redirect(_backtest_url(canonical, horizon, target))
     try:
         prices = cached_prices(symbol)
         if len(prices) < required_prices(horizon):
             raise DataError(
                 f"{symbol} has {len(prices)} days of history. A backtest needs at least {required_prices(horizon)}."
             )
-        run_id = fingerprint(prices, horizon)
+        run_id = fingerprint(prices, horizon, target)
         run = Run.objects.filter(pk=run_id).first()
         if run is None or run.failed:
             _count_new_run(request)
-            run = submit(run_id, prices, horizon)
+            run = submit(run_id, prices, horizon, target)
     except DataError as error:
-        return _run_page(request, symbol, horizon, error=str(error), status=422)
+        return _run_page(request, symbol, horizon, target, error=str(error), status=422)
     except RateLimited as error:
-        return _run_page(request, symbol, horizon, error=str(error), status=429)
+        return _run_page(request, symbol, horizon, target, error=str(error), status=429)
     return redirect(run)
 
 
 def run(request, run_id):
     run = get_object_or_404(Run, pk=run_id)
-    return _run_page(request, run.symbol, run.horizon, run=run)
+    return _run_page(request, run.symbol, run.horizon, run.target, run=run)
 
 
 def run_results(request, run_id):
@@ -79,12 +81,14 @@ def run_results(request, run_id):
     if run.status == Run.DONE:
         return render(request, "backcast/_run.html", {"run": run})
     if run.failed:
-        return render(request, "backcast/_results.html", {"error": run.message, "retry_url": _retry_url(run)})
+        return render(request, "backcast/_results.html", {"error": run.message, "retry_url": run.latest_url})
     return HttpResponse(_progress(run), status=202, content_type="text/plain; charset=utf-8")
 
 
 def models(request):
-    return render(request, "backcast/models.html", {"models": MODELS, "level": LEVEL})
+    return render(
+        request, "backcast/models.html", {"models": MODELS, "volatility_models": volatility.MODELS, "level": LEVEL}
+    )
 
 
 def method(request):
@@ -192,15 +196,11 @@ def _horizon(request) -> int:
     return int(value) if value.isdigit() and int(value) in HORIZONS else DEFAULT_HORIZON
 
 
-def _backtest_url(symbol, horizon):
-    return f"{reverse('backtest', args=[symbol])}?h={horizon}"
+def _backtest_url(symbol, horizon, target="price"):
+    return f"{reverse('backtest' if target == 'price' else 'volatility', args=[symbol])}?h={horizon}"
 
 
-def _retry_url(run):
-    return _backtest_url(run.symbol, run.horizon)
-
-
-def _run_page(request, symbol, horizon, run=None, error=None, status=200):
+def _run_page(request, symbol, horizon, target, run=None, error=None, status=200):
     if run and run.failed:
         error = run.message
     return render(
@@ -210,9 +210,11 @@ def _run_page(request, symbol, horizon, run=None, error=None, status=200):
             "symbol": symbol,
             "horizon": horizon,
             "horizons": HORIZONS,
+            "target": target,
+            "tabs": {name: _backtest_url(symbol, horizon, name) for name in TARGETS},
             "run": run,
             "error": error,
-            "retry_url": run and _retry_url(run),
+            "retry_url": run and run.latest_url,
             "pending": run and not error and run.status != Run.DONE,
             "progress": run and _progress(run),
         },
@@ -221,6 +223,8 @@ def _run_page(request, symbol, horizon, run=None, error=None, status=200):
 
 
 def _progress(run) -> str:
+    if run.status == Run.RUNNING and run.target == "volatility":
+        return f"Forecasting volatility from {ORIGINS} trading days with {len(volatility.MODELS)} models."
     if run.status == Run.RUNNING:
         seconds = "30 to 60" if "chronos" in MODELS_BY_KEY else "10 to 20"  # Chronos-Bolt triples the run time
         return (

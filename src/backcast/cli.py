@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 
+from . import volatility
 from .data import DataError, SourceError, load_prices, normalize_symbol
 from .evaluate import HORIZONS, headline, run_backtest, trend_note
 from .models import MODELS_BY_KEY
@@ -17,6 +18,10 @@ def main(argv: list[str] | None = None) -> int:
     run = commands.add_parser("run", help="backtest every model on one ticker")
     run.add_argument("symbol", help="ticker symbol, e.g. AAPL")
     run.add_argument("--horizon", type=int, choices=HORIZONS, default=5, help="trading days ahead (default: 5)")
+
+    vol = commands.add_parser("volatility", help="backtest the volatility models on one ticker")
+    vol.add_argument("symbol", help="ticker symbol, e.g. AAPL")
+    vol.add_argument("--horizon", type=int, choices=HORIZONS, default=5, help="trading days ahead (default: 5)")
 
     web = commands.add_parser("web", help="start the web app")
     web.add_argument("address", nargs="?", default="127.0.0.1:8000", help="host:port (default: 127.0.0.1:8000)")
@@ -45,10 +50,13 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         prices = load_prices(normalize_symbol(args.symbol))
-        report = run_backtest(prices, args.horizon)
+        report = (volatility.run_backtest if args.command == "volatility" else run_backtest)(prices, args.horizon)
     except (DataError, SourceError, ValueError) as error:
         print(f"backcast: {error}", file=sys.stderr)
         return 1
+    if args.command == "volatility":
+        _print_volatility(report)
+        return 0
 
     board = report.board.assign(model=report.board.model.map(lambda key: MODELS_BY_KEY[key].name))
     board = board.assign(mae=board.mae * 100).rename(columns={"mae": "mae_pct"})  # log error, read as a percentage
@@ -58,6 +66,18 @@ def main(argv: list[str] | None = None) -> int:
     print(f"{summary}\nSPA p-value that no model beats naive: {verdict.p_value:.3f}\n")
     print(board.to_string(index=False, float_format=lambda value: f"{value:.3f}", na_rep="—"), end="\n\n")
     return 0
+
+
+def _print_volatility(report) -> None:
+    result = report.verdict
+    board = report.board.assign(model=report.board.model.map(lambda key: volatility.MODELS_BY_KEY[key].name))
+    print(f"\n{report.prices.name}: {report.horizon}-day volatility forecasts from {result.origins} trading days\n")
+    print(f"{volatility.headline(result)} {volatility.long_run_note(result)}")
+    print(f"Realized volatility over the period: {result.realized:.1%} a year.")
+    print(f"SPA p-value that no model beats naive: {result.p_value:.3f}")
+    print(f"SPA p-value that no model beats the long-run average: {result.long_run_p_value:.3f}")
+    print("QLIKE: lower is better; gain is how much lower than naive's. Volatility is annualized.\n")
+    print(board.to_string(index=False, float_format=lambda value: f"{value:.3f}", na_rep="—"), end="\n\n")
 
 
 def _django(*command: str) -> None:
