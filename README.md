@@ -65,7 +65,7 @@ backcast run SPY --horizon 5
 ```
 
 A backtest needs roughly 40 to 80 seconds of CPU time, spread across every core, so a four-core machine finishes
-in 10 to 20 seconds. Everything runs on the CPU; a GPU isn't used and doesn't help. This is a real run from
+in 10 to 20 seconds. The built-in models all run on the CPU, and a GPU doesn't help them. This is a real run from
 23 October 2026:
 
 ```
@@ -140,8 +140,11 @@ uv sync --extra foundation        # or: pip install -e ".[foundation]"
 ```
 
 uv installs the CPU build of PyTorch, about 800 MB on disk, rather than the default Linux build, which adds several
-GB of CUDA libraries. pip takes PyTorch from PyPI unless you point it at the CPU index. With the extra installed,
-Chronos-Bolt joins every backtest. The first run downloads its weights (180 MB) from Hugging Face. Backcast uses the small version, 48M parameters. It takes about 95 ms per forecast
+GB of CUDA libraries. pip takes PyTorch from PyPI unless you point it at the CPU index. Chronos-Bolt runs on an
+NVIDIA GPU if PyTorch was built with CUDA and finds one, on the GPU of an Apple silicon Mac, and on the CPU otherwise.
+With uv, an NVIDIA GPU needs the CUDA build installed over the CPU one, from PyTorch's index for your CUDA version
+(see pytorch.org): `uv pip install torch --index-url <that index>`. A later `uv sync` puts the CPU build back. With
+the extra installed, Chronos-Bolt joins every backtest. The first run downloads its weights (180 MB) from Hugging Face. Backcast uses the small version, 48M parameters. It takes about 95 ms per forecast
 on one core, so a backtest takes about three times as long: 47 seconds instead of 15 on a four-core laptop.
 
 It sees log prices, like the other models. On four stocks it was tried with both: raw prices did slightly better

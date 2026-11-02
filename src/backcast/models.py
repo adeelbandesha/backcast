@@ -156,11 +156,14 @@ class Chronos(Model):
 
 @cache
 def _chronos(checkpoint: str):
-    """Loaded once per process. The first call downloads the weights from Hugging Face (about 200 MB)."""
+    """Loaded once per process, on a GPU if PyTorch can use one. The first call downloads the weights from Hugging
+    Face (about 200 MB).
+    """
     import torch
     from chronos import BaseChronosPipeline
 
-    return BaseChronosPipeline.from_pretrained(checkpoint, device_map="cpu", torch_dtype=torch.float32)
+    device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    return BaseChronosPipeline.from_pretrained(checkpoint, device_map=device, torch_dtype=torch.float32)
 
 
 MODELS: list[Model] = [
