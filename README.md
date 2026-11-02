@@ -161,6 +161,51 @@ estimates, and the backtest calls it between refits. The CLI, the leaderboard an
 Forecasts run in worker processes, so the model has to be picklable. Defining the class at module level is
 enough.
 
+## Volatility
+
+The size of a stock's moves is far more predictable than their direction. Big moves come in clusters, and over
+months volatility drifts back to its usual level. A second backtest asks whether models can forecast it:
+
+```bash
+uv run backcast volatility SPY --horizon 5
+```
+
+In the web app it's the Volatility tab on any backtest page. The schedule is the same as for prices: a forecast
+from each of the last 504 trading days, models re-estimated every 20. Each model forecasts the variance of the
+return over the next `h` trading days, and it is scored against the realized variance, the sum of the squared
+daily log returns over those days, with the QLIKE loss. QLIKE ranks forecasts correctly even though one day's
+squared return is a very noisy measure of its variance (Patton, 2011), it depends only on the ratio of realized to
+forecast so a few violent days don't decide the result, and it charges more for too little volatility than too much.
+
+| Model            | Kind       | Notes                                                                        |
+| ---------------- | ---------- | ---------------------------------------------------------------------------- |
+| Naive            | Baseline   | The last 20 trading days' volatility carries on. The benchmark.              |
+| Long-run average | Baseline   | The average over all the history so far. Often harder to beat than naive.    |
+| EWMA             | Smoothing  | RiskMetrics' exponentially weighted average of squared returns, decay 0.94.  |
+| GARCH(1,1)       | GARCH      | Fitted by maximum likelihood with [arch](https://github.com/bashtage/arch).  |
+| GJR-GARCH        | GARCH      | GARCH with an extra term for falls, which raise volatility more than rises.  |
+| HAR              | Regression | Corsi's regression on the last day's, week's and month's squared returns.    |
+
+The verdict runs Hansen's SPA test twice: can any model beat naive, and can any beat the long-run average? The
+second matters because a model can beat naive just by averaging more days than naive's month.
+
+`scripts/volatility_check.py` ran it on the 498 stocks of the S&P 500 study, and again on each stock's returns in
+shuffled order, which keeps every move but breaks up the calm and volatile stretches. These are the shares of stocks
+where some model won by more than luck (SPA p < 0.05):
+
+| Some model beat           | 1 day | 5 days | 20 days |
+| ------------------------- | ----: | -----: | ------: |
+| naive, real returns       | 38.2% |  45.0% |   56.4% |
+| naive, shuffled           | 75.3% |  80.3% |   83.9% |
+| long-run, real returns    |  4.4% |   3.2% |    4.4% |
+| long-run, shuffled        |  0.0% |   0.4% |    2.2% |
+
+Beating naive is easier on the shuffled returns, because without clusters a month of returns is just a noisier
+average. Against the long-run average the models win a little more often than on the control, but no more often
+than a 5% test flags by chance. Volatility clustering is there, but with daily closes over two years, following it
+rarely beats the plain average on a single stock. The studies that find a clear edge measure each day's volatility
+from intraday prices.
+
 ## Price data
 
 Prices come from Yahoo Finance by default, with no account or key needed. `BACKCAST_PRICE_SOURCE` switches the
@@ -211,6 +256,7 @@ src/backcast/
   sources/       the built-in price sources: Yahoo Finance and CSV files
   models.py      the forecasting models
   evaluate.py    walk-forward backtest, metrics, significance tests, the verdict
+  volatility.py  the volatility models, their backtest and verdict
   study.py       the S&P 500 study's placebo and dataset rows
   version.py     the version recorded with every run
   cli.py         the backcast command
@@ -218,7 +264,8 @@ src/backcast/
     tasks.py     the background jobs: running and saving a backtest, and the nightly examples
     models.py    the saved run
 tests/           engine, data, price source, study and view tests; none of them touch the network
-scripts/         refit_check.py, the experiment behind the refit interval; study.py, the S&P 500 study
+scripts/         refit_check.py, the experiment behind the refit interval; study.py, the S&P 500 study;
+                 volatility_check.py, the volatility backtest across the study's stocks
 ```
 
 ## Deploying
@@ -342,13 +389,6 @@ and run the same command again to carry on.
 Prices are saved in the work folder the first time they load, so a resumed run and every placebo use exactly the
 same data. A download that fails is retried on the next run. `export` refuses rows from more than one version of
 the code.
-
-## Planned
-
-What I'm working on next. None of it exists yet.
-
-- A volatility track. Volatility, unlike price, is known to be partly predictable, so models there have a much
-  better record against naive.
 
 ## Development
 

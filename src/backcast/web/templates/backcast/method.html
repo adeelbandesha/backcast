@@ -111,6 +111,50 @@
     that way over the period, the headline says so.
   </p>
 
+  <h2>Volatility</h2>
+  <p>
+    The direction of a price is close to a coin toss. The size of its moves isn't: big moves come in clusters, so a
+    volatile week tends to follow a volatile week, and over months volatility drifts back to its usual level. That
+    makes volatility the part of a stock's future that models can forecast, so Backcast has a second backtest for it,
+    on the same {{ origins }} trading days, with the models re-estimated every {{ refit }} days.
+  </p>
+  <p>
+    Each model forecasts the variance of the return over the next <var>h</var> trading days. The forecast is scored
+    against the realized variance, the sum of the squared daily log returns over those days. For one day that is a
+    single squared return, a very noisy measure of how volatile the day really was. The score is QLIKE,
+    log&nbsp;<var>f</var> + realized&nbsp;/&nbsp;<var>f</var>. Patton (2011) showed that with a noisy realized
+    measure, QLIKE and squared error on the variance still rank forecasts the way the true variance would, while
+    errors on volatility itself, the square root, do not. Of those two, QLIKE depends only on the ratio of realized to
+    forecast, so a few violent days don't decide the result, and it charges more for forecasting too little
+    volatility than too much.
+  </p>
+  <p>
+    Naive is the volatility of the last 20 trading days, the historical volatility traders quote. A month is a small
+    sample, though, and volatility drifts back to its average, so a second baseline, the average over all the history
+    before each forecast, is often harder to beat. The headline runs Hansen's SPA test against each.
+  </p>
+  <p>
+    Beating naive is not enough on its own. A model can win simply by averaging more days than naive's month, which
+    needs no clustering at all. So <code>scripts/volatility_check.py</code> runs the volatility backtest on every
+    stock in the <a href="{% url 'findings' %}">S&amp;P 500 study</a>, and again on each stock's daily returns in
+    shuffled order, which keeps every move but breaks up the calm and volatile stretches.
+  </p>
+  <p>
+    Across 498 stocks, some model beat naive on 38% of them at one day, 45% at five days and 56% at twenty. On the
+    shuffled returns it did so far more often, on 75 to 84%: with no clusters to follow, a month of returns is just a
+    noisier average than the whole history. So naive's month does pick up real clustering, and beating it proves
+    little.
+  </p>
+  <p>
+    Against the long-run average, some model won on 4.4%, 3.2% and 4.4% of stocks at the three horizons, against
+    0%, 0.4% and 2.2% on the shuffled returns. That is more than the control, but no more than a test at the 5% level
+    flags by chance. The long-run average was itself the best forecast on 105 stocks at one day and 144 at twenty;
+    otherwise HAR and GJR-GARCH came out best most often. Volatility clustering is real, but over two years of daily
+    closes the models that follow it rarely beat the plain average by more than luck on any one stock. Studies that
+    find a clear edge measure each day's volatility from intraday prices, which is far less noisy than one squared
+    daily return.
+  </p>
+
   <h2>Limits</h2>
   <ul>
     <li>Two years is still one stretch of market history. A result can hold over these two years and not the next two.</li>

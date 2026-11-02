@@ -60,7 +60,7 @@ class LongRun(VolatilityModel):
     key, name, family = "long_run", "Long-run average", "Baseline"
     summary = (
         "The next h days will be as volatile as all the history so far, on average. Volatility tends to drift back "
-        "to its average, so on most stocks this is a harder baseline than naive."
+        "to its average, so this is often a harder baseline than naive."
     )
 
     def fit(self, returns, h):
