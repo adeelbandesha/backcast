@@ -87,3 +87,8 @@ pythonpath = ["."]
 testpaths = ["tests"]
 # Browser tests use the installed Google Chrome (GitHub's Ubuntu runners have it), so no browser download.
 addopts = "--browser-channel chrome"
+filterwarnings = [
+    # shortcut: exchange_calendars 4.13.2, the latest, reads Series.values on time-zoned dates, which pandas warns will
+    # change in pandas 4. Not our code, and hidden outside tests. Remove once a release no longer warns.
+    "ignore:Series.values returning an ndarray that drops timezone information:pandas.errors.Pandas4Warning",
+]
