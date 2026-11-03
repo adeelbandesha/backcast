@@ -1,6 +1,7 @@
 import json
 import re
 from datetime import timedelta
+from importlib.metadata import version
 
 import numpy as np
 import pandas as pd
@@ -91,7 +92,7 @@ def test_backtest_runs_and_redirects_to_the_saved_run(client, prices):
     run = Run.objects.get()
     assert (run.symbol, run.horizon, run.status, run.source) == ("MSFT", 5, Run.DONE, "yahoo")
     assert run.data_date.isoformat() == "2026-10-23"
-    assert run.settings["origins"] == 504 and run.code_version.startswith("0.1.0")
+    assert run.settings["origins"] == 504 and run.code_version.startswith(version("backcast"))
     assert "About this run" in response.text and run.id in response.text
 
     again = client.get("/backtest/MSFT/", {"h": "5"})
