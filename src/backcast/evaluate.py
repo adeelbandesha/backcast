@@ -268,6 +268,7 @@ def verdict(board: pd.DataFrame, results: pd.DataFrame, horizon: int) -> Verdict
 
 
 def headline(result: Verdict) -> str:
+    """The verdict in one sentence: did the best model beat naive, and is the margin bigger than noise."""
     name = MODELS_BY_KEY[result.best].name if result.best in MODELS_BY_KEY else result.best  # scored forecasts
     margin = abs(result.relative_change)
     amount = f"{margin:.1%}" if margin >= 0.0005 else "less than 0.1%"
@@ -299,6 +300,11 @@ def trend_note(result: Verdict) -> str:
 
 @dataclass(frozen=True)
 class Report:
+    """A backtest's output. `board` is the leaderboard, one row per model; `verdict` sums it up (see `headline`);
+    `results` has one row per model and forecast date; `trend` splits the board into up and down markets; `future`
+    is each model's forecast from the last price, for `future_dates`.
+    """
+
     prices: pd.Series
     horizon: int
     results: pd.DataFrame
@@ -310,6 +316,7 @@ class Report:
 
 
 def run_backtest(prices: pd.Series, horizon: int, models: list[Model] = MODELS) -> Report:
+    """Backtest every model on `prices` (from `load_prices`) at `horizon` trading days, and test it against naive."""
     results = walk_forward(prices, horizon, models)
     board = leaderboard(results, horizon)
     future_dates, future = future_paths(prices, horizon, models)

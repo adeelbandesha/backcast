@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from backcast import cli
 from backcast.evaluate import MIN_ORIGINS, headline, leaderboard, score, walk_forward
 from backcast.models import Drift, Naive
 
@@ -82,3 +83,18 @@ def test_the_headline_names_the_scored_forecasts(backtest):
 def test_naive_is_taken():
     with pytest.raises(ValueError, match="benchmark"):
         score(pd.DataFrame(), random_walk(), 5, name="naive")
+
+
+def test_the_command_line_scores_a_csv(backtest, tmp_path, monkeypatch, capsys):
+    prices, results = backtest
+    path = tmp_path / "forecasts.csv"
+    drift_forecasts(results).to_csv(path, index=False)
+    monkeypatch.setattr(cli, "load_prices", lambda symbol: prices)
+
+    assert cli.main(["score", str(path), "TEST", "--horizon", "5"]) == 0
+    printed = capsys.readouterr().out
+    assert f"{len(results) // 2} of your 5-day forecasts" in printed
+    assert "Your forecasts" in printed and "Naive" in printed
+
+    assert cli.main(["score", str(tmp_path / "missing.csv"), "TEST"]) == 1
+    assert "missing.csv" in capsys.readouterr().err

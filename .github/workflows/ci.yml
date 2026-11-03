@@ -48,10 +48,13 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # statsforecast has no Python 3.13 wheel, so installing the built wheel compiles it.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
       - run: uv build
       - name: Wheel includes the web app's templates and static files
         run: |
@@ -60,6 +63,20 @@ jobs:
                       backcast/web/static/backcast/js/app.js backcast/web/static/backcast/css/app.css \
                       backcast/web/static/backcast/vendor/plot.umd.min.js; do
             grep -q "$file" <<< "$contents" || { echo "missing from wheel: $file"; exit 1; }
+          done
+      - name: The wheel installs and runs outside the source tree
+        # Pinned to the locked versions: this checks the packaging, not whatever upstream released today.
+        run: |
+          uv venv --python 3.13 /tmp/wheel-env
+          VIRTUAL_ENV=/tmp/wheel-env uv pip install --constraint requirements.txt dist/*.whl
+          cd /tmp
+          export BACKCAST_DATA_DIR=/tmp/backcast-data
+          /tmp/wheel-env/bin/backcast --help
+          DJANGO_SETTINGS_MODULE=backcast.web.settings /tmp/wheel-env/bin/django-admin check
+          /tmp/wheel-env/bin/backcast web --no-worker 127.0.0.1:8000 &
+          for i in $(seq 30); do curl -sf http://127.0.0.1:8000/ > /dev/null && break; sleep 1; done
+          for path in / /findings/ /static/backcast/css/app.css /static/backcast/study/results.csv; do
+            curl -sf "http://127.0.0.1:8000$path" > /dev/null || { echo "failed: $path"; exit 1; }
           done
 
   docker:
