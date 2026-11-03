@@ -30,11 +30,13 @@ CUMULATIVE = '[data-chart="cumulative"] .chart-plot svg'
 
 @pytest.fixture(autouse=True)
 def setup(settings, monkeypatch, page):
-    """Fake prices and models, and fail the test on any error in the browser console."""
+    """Fake prices, models and symbol search, and fail the test on any error in the browser console."""
     settings.CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
     cache.clear()
     monkeypatch.setattr(tasks, "load_prices", lambda symbol: PRICES.rename(symbol))
     monkeypatch.setattr(tasks, "run_backtest", lambda prices, horizon: run_backtest(prices, horizon, MODELS))
+    # Typing a symbol searches as you type, so every test needs this, not only the search test.
+    monkeypatch.setattr(views, "search_symbols", lambda query, limit=8: [])
     errors = []
     page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
     page.on("pageerror", lambda error: errors.append(str(error)))
