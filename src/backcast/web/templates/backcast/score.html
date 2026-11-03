@@ -1,0 +1,72 @@
+{% extends "backcast/base.html" %}
+{% load static humanize %}
+
+{% block title %}{% if results %}{{ results.symbol }} · your {{ results.horizon }}-day forecasts · {% endif %}Score your forecasts · Backcast{% endblock %}
+{% block description %}Upload forecasts you made elsewhere and score them against the naive forecast, with the same tests as a backtest.{% endblock %}
+{% block head %}
+  <script src="{% static 'backcast/vendor/d3.min.js' %}" defer></script>
+  <script src="{% static 'backcast/vendor/plot.umd.min.js' %}" defer></script>
+{% endblock %}
+
+{% block content %}
+<section class="intro">
+  <h1>Score your own forecasts</h1>
+  <p class="lede">
+    Made forecasts some other way? Upload them and Backcast scores them against the naive forecast, on the same days,
+    with the same tests it uses on its own models.
+  </p>
+
+  <form class="query" action="{% url 'score' %}" method="post" enctype="multipart/form-data">
+    {% include "backcast/_combobox.html" with field_id="symbol" label="Ticker or company" value=symbol describedby="score-error" required=True fill_only=True %}
+    <fieldset class="segmented">
+      <legend>Forecast horizon</legend>
+      <div class="segmented-options">
+        {% for h in horizons %}
+          <input type="radio" name="h" value="{{ h }}" id="h-{{ h }}"{% if h == horizon %} checked{% endif %}>
+          <label for="h-{{ h }}">{{ h }} day{{ h|pluralize }}</label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <div>
+      <label for="forecasts">CSV file</label>
+      <input type="file" id="forecasts" name="forecasts" accept=".csv,text/csv" aria-describedby="score-error file-help" required>
+    </div>
+    <button class="button button-primary" type="submit">Score forecasts</button>
+  </form>
+  <p class="field-error" id="score-error" role="alert">{{ error|default:'' }}</p>
+</section>
+
+{% if results %}
+<article class="report score-report">
+  <header class="report-head">
+    <h2 class="symbol">{{ results.symbol }}</h2>
+    <p>Your {{ results.horizon }}-day forecasts against naive</p>
+  </header>
+  <div class="results">{% include "backcast/_results.html" %}</div>
+</article>
+{% endif %}
+
+<section class="about prose" aria-labelledby="file-title">
+  <h2 id="file-title">The file</h2>
+  <p id="file-help">
+    One row per forecast, with a header row. <code>date</code> is the trading day whose close you forecast from, and
+    <code>forecast</code> is the price you expected that many trading days later, scored as the median.
+  </p>
+  <pre><code>date,forecast,q10,q90
+2025-03-03,241.10,232.50,249.80
+2025-03-04,238.75,230.20,247.40</code></pre>
+  <p>
+    <code>q10</code> and <code>q90</code> are optional: with them you also get the 80% interval's coverage and score.
+    Add <code>q20</code> to <code>q80</code> as well and CRPS is scored too.
+  </p>
+  <p>
+    You need at least {{ min_origins }} forecasts whose target date has passed; later ones are left out. The prices
+    have to go back {{ trend_days }} trading days before your first forecast, and Backcast loads five years of them,
+    so start within about the last four years. The file can be up to {{ max_upload|intcomma }} bytes.
+  </p>
+  <p>
+    Backcast checks the dates but can't tell whether a forecast used prices from after its date. Nothing you upload
+    is saved: the results are on this page only, so there's no link to share.
+  </p>
+</section>
+{% endblock %}

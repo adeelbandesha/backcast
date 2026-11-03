@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from django.core.cache import cache
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
 from backcast.data import DataError
@@ -332,3 +333,43 @@ def test_findings_page(client, tmp_path, monkeypatch):
     assert "0.0% to 0.0%" in response.text and "the seeds 1, 2" in response.text
     payload = re.search(r'<script id="findings-data" type="application/json">(.*?)</script>', response.text, re.S)
     assert json.loads(payload.group(1))["p_values"]["5"] == {"placebo": [0.6, 0.6], "real": [0.01]}
+
+
+def forecast_csv(prices, bom=False) -> SimpleUploadedFile:
+    dates = prices.index[-305:-1]  # the last few targets haven't happened yet, so those rows are left out
+    close = prices.loc[dates]
+    forecasts = pd.DataFrame({"date": dates.strftime("%Y-%m-%d"), "forecast": close * 1.002, "q10": close * 0.97})
+    text = forecasts.assign(q90=close * 1.03).to_csv(index=False)
+    return SimpleUploadedFile("forecasts.csv", (("﻿" if bom else "") + text).encode(), "text/csv")
+
+
+@pytest.mark.parametrize("bom", [False, True])
+def test_score_uploaded_forecasts(client, prices, bom):
+    upload = forecast_csv(tasks.cached_prices("AAPL"), bom)
+    response = client.post("/score/", {"symbol": "aapl", "h": "5", "forecasts": upload})
+    assert response.status_code == 200
+    assert "Your forecasts" in response.text and 'data-chart="price"' not in response.text
+    chart = chart_data(response)
+    assert chart["future"]["dates"] == [] and len(chart["origins"]["Your forecasts"]["origin"]) == 300
+    assert not Run.objects.exists()  # nothing uploaded is kept
+
+
+@pytest.mark.parametrize(
+    "upload, message",
+    [
+        (None, "Choose a CSV file"),
+        (SimpleUploadedFile("f.csv", b"\x00\xff\xfe junk"), "isn&#x27;t text"),
+        (SimpleUploadedFile("f.csv", b"date,forecast\n2026-10-20,abc\n"), "abc"),
+        (SimpleUploadedFile("f.csv", b"x" * (views.MAX_UPLOAD + 1)), "is the limit"),
+    ],
+)
+def test_score_refuses_bad_uploads(client, prices, upload, message):
+    response = client.post("/score/", {"symbol": "AAPL", "h": "5", **({"forecasts": upload} if upload else {})})
+    assert response.status_code == 400
+    assert message in response.text
+
+
+def test_score_page(client):
+    response = client.get("/score/")
+    assert response.status_code == 200
+    assert 'enctype="multipart/form-data"' in response.text

@@ -15,16 +15,27 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .. import volatility
-from ..data import DataError, normalize_symbol, search_symbols, source_name
-from ..evaluate import HORIZONS, MIN_HISTORY, MIN_ORIGINS, ORIGINS, REFIT, SIGNIFICANCE, TREND_DAYS, required_prices
+from ..data import DataError, SourceError, normalize_symbol, search_symbols, source_name
+from ..evaluate import (
+    HORIZONS,
+    MIN_HISTORY,
+    MIN_ORIGINS,
+    ORIGINS,
+    REFIT,
+    SIGNIFICANCE,
+    TREND_DAYS,
+    required_prices,
+    score,
+)
 from ..models import LEVEL, MODELS, MODELS_BY_KEY
 from ..study import findings as study_findings
 from .formats import p_value, percent, signed_percent, versus
 from .models import STALLED_AFTER, Run
-from .tasks import EXAMPLES, TARGETS, cached_prices, fingerprint, submit
+from .tasks import EXAMPLES, TARGETS, cached_prices, fingerprint, submit, summarize
 
 DEFAULT_HORIZON = 5
 SEARCH_TTL = 60 * 60
+MAX_UPLOAD = 1_000_000  # bytes; five years of daily forecasts with all nine quantiles is about 200 kB
 STUDY = Path(__file__).parent / "static/backcast/study"
 
 
@@ -39,7 +50,7 @@ def home(request):
         except DataError as error:
             return _home(request, error=str(error), status=400)
         target = request.GET.get("t") if request.GET.get("t") in TARGETS else "price"
-        return redirect(_backtest_url(symbol, _horizon(request), target))
+        return redirect(_backtest_url(symbol, _horizon(request.GET), target))
     return _home(request)
 
 
@@ -49,7 +60,7 @@ def backtest(request, symbol, target="price"):
         canonical = normalize_symbol(symbol)
     except DataError as error:
         return _home(request, error=str(error), status=404)
-    horizon = _horizon(request)
+    horizon = _horizon(request.GET)
     if canonical != symbol:
         return redirect(_backtest_url(canonical, horizon, target))
     try:
@@ -83,6 +94,37 @@ def run_results(request, run_id):
     if run.failed:
         return render(request, "backcast/_results.html", {"error": run.message, "retry_url": run.latest_url})
     return HttpResponse(_progress(run), status=202, content_type="text/plain; charset=utf-8")
+
+
+def score_forecasts(request):
+    """Scores an uploaded CSV of forecasts against naive. It takes a fraction of a second, so it runs here rather than
+    in the worker, and nothing is saved: the results exist only in this response.
+    """
+    context = {
+        "symbol": request.POST.get("symbol", "").strip()[:20],
+        "horizon": _horizon(request.POST),
+        "horizons": HORIZONS,
+        "min_origins": MIN_ORIGINS,
+        "trend_days": TREND_DAYS,
+        "max_upload": MAX_UPLOAD,
+    }
+    if request.method != "POST":
+        return render(request, "backcast/score.html", context)
+    upload = request.FILES.get("forecasts")
+    try:
+        symbol = normalize_symbol(context["symbol"])
+        if upload is None:
+            raise ValueError("Choose a CSV file of forecasts.")
+        if upload.size > MAX_UPLOAD:
+            raise ValueError(f"That file is over {MAX_UPLOAD // 1000:,} kB, which is the limit.")
+        try:
+            forecasts = pd.read_csv(upload, encoding="utf-8-sig")  # -sig: spreadsheet programs often add a BOM
+        except UnicodeDecodeError:
+            raise ValueError("That file isn't text. Save it from your spreadsheet as CSV (UTF-8).") from None
+        report = score(forecasts, cached_prices(symbol), context["horizon"])
+    except (DataError, SourceError, ValueError) as error:  # pandas' parse errors are ValueErrors too
+        return render(request, "backcast/score.html", {**context, "error": str(error)}, status=400)
+    return render(request, "backcast/score.html", {**context, "results": summarize(report)})
 
 
 def models(request):
@@ -182,7 +224,7 @@ def _home(request, error=None, status=200):
         {
             "error": error,
             "symbol": request.GET.get("symbol", "").strip()[:20],
-            "horizon": _horizon(request),
+            "horizon": _horizon(request.GET),
             "horizons": HORIZONS,
             "examples": EXAMPLES,
             "origins": ORIGINS,
@@ -191,8 +233,8 @@ def _home(request, error=None, status=200):
     )
 
 
-def _horizon(request) -> int:
-    value = request.GET.get("h", "")
+def _horizon(params) -> int:
+    value = params.get("h", "")
     return int(value) if value.isdigit() and int(value) in HORIZONS else DEFAULT_HORIZON
 
 

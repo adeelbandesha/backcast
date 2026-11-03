@@ -70,7 +70,7 @@ function initCombobox(box) {
   const choose = (index) => {
     input.value = options[index].symbol;
     close();
-    input.form.requestSubmit();
+    if (box.dataset.pick !== "fill") input.form.requestSubmit();
   };
 
   const show = (results) => {
@@ -224,13 +224,13 @@ function initCharts() {
       ? { scale: 1, total: formatLoss, value: formatVolatility, error: formatLoss, actual: "Realized", score: "QLIKE", better: "Lower loss than naive", worse: "Higher loss than naive" }
       : { scale: 100, total: formatPoints, value: formatPrice, error: formatError, actual: "Actual", score: "error", better: "Closer than naive", worse: "Further than naive" };
   const draw = () => {
-    const key = picker.querySelector("input:checked")?.value ?? data.best;
+    const key = picker?.querySelector("input:checked")?.value ?? data.best;
     const t = tokens();
     if (data.target === "volatility") drawVolatility(charts.querySelector('[data-chart="volatility"]'), data, key, names[key], t);
-    else drawPrice(charts.querySelector('[data-chart="price"]'), data, key, names[key], t);
+    else if (data.future.dates.length) drawPrice(charts.querySelector('[data-chart="price"]'), data, key, names[key], t);
     drawCumulative(charts.querySelector('[data-chart="cumulative"]'), data, key, names[key], t, units);
   };
-  picker.addEventListener("change", draw);
+  picker?.addEventListener("change", draw);
   redrawOn(charts, draw);
 }
 
