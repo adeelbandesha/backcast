@@ -1,8 +1,13 @@
+import sys
+from importlib.metadata import EntryPoint, EntryPoints
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
 import pytest
 from scipy.stats import ttest_1samp
 
+from backcast import models
 from backcast.evaluate import (
     Verdict,
     _crps,
@@ -306,3 +311,22 @@ def test_headline(result, expected):
 )
 def test_trend_note(result, expected):
     assert trend_note(result) == expected
+
+
+class Plugin(Drift):
+    key, name, family, summary = "plugin", "Plugin", "Test", "Drift under another name."
+
+
+def test_installed_packages_can_add_models(monkeypatch):
+    monkeypatch.setitem(sys.modules, "fake_models", SimpleNamespace(Plugin=Plugin, nameless=Model(), clash=Drift()))
+    plugins = [EntryPoint("plugin", "fake_models:Plugin", models.ENTRY_POINTS)]
+    monkeypatch.setattr(models, "entry_points", lambda **params: EntryPoints(plugins).select(**params))
+    assert [model.key for model in models._with_plugins([Naive()])] == ["naive", "plugin"]
+
+    plugins[:] = [EntryPoint("nameless", "fake_models:nameless", models.ENTRY_POINTS)]
+    with pytest.raises(TypeError, match="'nameless' .* must be a Model"):
+        models._with_plugins([Naive()])
+
+    plugins[:] = [EntryPoint("clash", "fake_models:clash", models.ENTRY_POINTS)]
+    with pytest.raises(ValueError, match="uses the key 'drift', which Drift has"):
+        models._with_plugins([Drift()])

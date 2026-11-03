@@ -22,6 +22,7 @@ only on prices the model hadn't seen, and then tests whether the difference is b
 | Test whether models can forecast volatility | `backcast volatility AAPL` | [Volatility](#volatility) |
 | Score forecasts you made some other way | `backcast score my_forecasts.csv AAPL` | [Scoring your own forecasts](#scoring-your-own-forecasts) |
 | Use your own price files or data provider | `BACKCAST_PRICE_SOURCE=csv BACKCAST_CSV_DIR=~/prices backcast run AAPL` | [Price data](#price-data) |
+| Benchmark your own model against all of these | `pip install` a package that registers it | [The models](#the-models) |
 | Add Amazon's pretrained Chronos-Bolt model | `pip install "backcast[foundation]"` | [Chronos-Bolt](#chronos-bolt) |
 | Rerun the S&P 500 study (needs a clone) | `uv run python scripts/study.py run` | [Running the study yourself](#running-the-study-yourself) |
 
@@ -294,6 +295,20 @@ implement `fit(y, h)` instead: it returns a function that forecasts from any lat
 estimates, and the backtest calls it between refits. The CLI, the leaderboard and the charts will include it.
 Forecasts run in worker processes, so the model has to be picklable. Defining the class at module level is
 enough.
+
+**A model package.** To benchmark your model without forking Backcast, put it in its own package and register it
+under the `backcast.models` entry point group, pointing at the class (or at an instance, if it takes arguments). In
+the package's `pyproject.toml`:
+
+```toml
+[project.entry-points."backcast.models"]
+mymodel = "backcast_mymodel:MyModel"
+```
+
+After `pip install backcast-mymodel`, it joins every backtest, the web app and the study, next to the built-in
+models. Give it a `key` no other model uses, plus `name`, `family` and `summary`. A plugin that fails to load or
+breaks those rules stops Backcast with an error rather than being left out quietly. Saved runs record every model's
+key, so results with and without it never mix.
 
 ## Volatility
 
