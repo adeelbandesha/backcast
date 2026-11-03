@@ -20,6 +20,13 @@
     {% endfor %}
   </dl>
 
+  <h2>Chronos-Bolt</h2>
+  <p>
+    Chronos-Bolt, Amazon's pretrained forecasting model, is an optional extra because it needs PyTorch. Install it
+    with <code>uv sync --extra foundation</code> and it joins every backtest. It forecasts without being fitted to
+    the stock: it learned from a large collection of other time series. It makes runs about three times as long.
+  </p>
+
   <h2>Adding a model</h2>
   <p>
     Subclass <code>Model</code> in <code>backcast/models.py</code>, return a <code>Forecast</code> with the median

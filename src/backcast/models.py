@@ -9,7 +9,8 @@ instance to `MODELS`.
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from functools import partial
+from functools import cache, partial
+from importlib.util import find_spec
 
 import lightgbm as lgb
 import numpy as np
@@ -134,6 +135,37 @@ class LightGBM(Model):
         return forecast
 
 
+class Chronos(Model):
+    key, name, family = "chronos", "Chronos-Bolt", "Foundation model"
+    summary = (
+        "Amazon's Chronos-Bolt (small, 48M parameters), a transformer pretrained on many thousands of time series. "
+        "It reads the log price history as it is, with no fitting to the stock, and forecasts the quantiles directly."
+    )
+    checkpoint = "amazon/chronos-bolt-small"
+
+    def forecast(self, y, h):
+        import torch
+
+        context = torch.from_numpy(np.log(y))
+        quantiles, _ = _chronos(self.checkpoint).predict_quantiles(
+            context, prediction_length=h, quantile_levels=QUANTILES.tolist()
+        )
+        quantiles = np.exp(np.sort(quantiles[0].numpy().T.astype(float), axis=0))  # separate heads can cross
+        return Forecast(quantiles[len(QUANTILES) // 2], quantiles)
+
+
+@cache
+def _chronos(checkpoint: str):
+    """Loaded once per process, on a GPU if PyTorch can use one. The first call downloads the weights from Hugging
+    Face (about 200 MB).
+    """
+    import torch
+    from chronos import BaseChronosPipeline
+
+    device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    return BaseChronosPipeline.from_pretrained(checkpoint, device_map=device, torch_dtype=torch.float32)
+
+
 MODELS: list[Model] = [
     Naive(),
     Drift(),
@@ -157,5 +189,7 @@ MODELS: list[Model] = [
     ),
     LightGBM(),
 ]
+if find_spec("chronos"):  # installed with the `foundation` extra
+    MODELS.append(Chronos())
 
 MODELS_BY_KEY = {model.key: model for model in MODELS}

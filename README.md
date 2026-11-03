@@ -65,7 +65,7 @@ backcast run SPY --horizon 5
 ```
 
 A backtest needs roughly 40 to 80 seconds of CPU time, spread across every core, so a four-core machine finishes
-in 10 to 20 seconds. Everything runs on the CPU; a GPU isn't used and doesn't help. This is a real run from
+in 10 to 20 seconds. The built-in models all run on the CPU, and a GPU doesn't help them. This is a real run from
 23 October 2026:
 
 ```
@@ -115,18 +115,42 @@ ahead of naive, or fallen behind, over the two years. Every chart has a table of
 
 ## The models
 
-| Model    | Kind             | Notes                                                                                          |
-| -------- | ---------------- | ---------------------------------------------------------------------------------------------- |
-| Naive    | Baseline         | Tomorrow's price is today's. The benchmark.                                                    |
-| Drift    | Baseline         | Naive plus the average daily percentage change over the training data.                         |
-| ETS      | Statistical      | Exponential smoothing, components picked automatically.                                        |
-| ARIMA    | Statistical      | Auto-ARIMA.                                                                                    |
-| Theta    | Statistical      | The Theta method, which did well in the M3 competition.                                        |
-| LightGBM | Machine learning | Gradient-boosted trees on the last 20 daily log returns, quantile regression for the interval. |
+| Model        | Kind             | Notes                                                                                          |
+| ------------ | ---------------- | ---------------------------------------------------------------------------------------------- |
+| Naive        | Baseline         | Tomorrow's price is today's. The benchmark.                                                    |
+| Drift        | Baseline         | Naive plus the average daily percentage change over the training data.                         |
+| ETS          | Statistical      | Exponential smoothing, components picked automatically.                                        |
+| ARIMA        | Statistical      | Auto-ARIMA.                                                                                    |
+| Theta        | Statistical      | The Theta method, which did well in the M3 competition.                                        |
+| LightGBM     | Machine learning | Gradient-boosted trees on the last 20 daily log returns, quantile regression for the interval. |
+| Chronos-Bolt | Foundation model | Optional. A pretrained transformer that forecasts without being fitted to the stock.           |
 
 ETS, ARIMA and Theta come from [statsforecast](https://github.com/Nixtla/statsforecast). Every model is fitted to
 log prices and its forecasts converted back, so none can forecast a price below zero, and each one's point forecast
 is the median of its distribution.
+
+### Chronos-Bolt
+
+[Chronos-Bolt](https://github.com/amazon-science/chronos-forecasting) is Amazon's pretrained forecasting model. It
+learned from a large collection of time series and forecasts a new one without being fitted to it. It needs
+PyTorch, so it is an optional extra:
+
+```bash
+uv sync --extra foundation        # or: pip install -e ".[foundation]"
+```
+
+uv installs the CPU build of PyTorch, about 800 MB on disk, rather than the default Linux build, which adds several
+GB of CUDA libraries. pip takes PyTorch from PyPI unless you point it at the CPU index. Chronos-Bolt runs on an
+NVIDIA GPU if PyTorch was built with CUDA and finds one, on the GPU of an Apple silicon Mac, and on the CPU otherwise.
+With uv, an NVIDIA GPU needs the CUDA build installed over the CPU one, from PyTorch's index for your CUDA version
+(see pytorch.org): `uv pip install torch --index-url <that index>`. A later `uv sync` puts the CPU build back. With
+the extra installed, Chronos-Bolt joins every backtest. The first run downloads its weights (180 MB) from Hugging Face. Backcast uses the small version, 48M parameters. It takes about 95 ms per forecast
+on one core, so a backtest takes about three times as long: 47 seconds instead of 15 on a four-core laptop.
+
+It sees log prices, like the other models. On four stocks it was tried with both: raw prices did slightly better
+on AAPL and NVDA, but on PTON, which lost most of its value, raw prices left it 30% worse than naive at one day
+against 8% with log prices. It usually doesn't beat naive on price. On AAPL at five days it came last, 3.7% worse
+than naive.
 
 To add a model, subclass `Model` in `src/backcast/models.py`, implement `forecast(y, h)` so it returns a `Forecast`
 with a median path of length `h` and its quantiles from 10% to 90% (an array of shape `(9, h)`), and append an
@@ -323,8 +347,8 @@ the code.
 
 What I'm working on next. None of it exists yet.
 
-- A pretrained time-series foundation model (Chronos-Bolt), and a volatility track. Volatility, unlike price, is
-  known to be partly predictable, so models there have a much better record against naive.
+- A volatility track. Volatility, unlike price, is known to be partly predictable, so models there have a much
+  better record against naive.
 
 ## Development
 

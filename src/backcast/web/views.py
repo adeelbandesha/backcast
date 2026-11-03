@@ -222,8 +222,9 @@ def _run_page(request, symbol, horizon, run=None, error=None, status=200):
 
 def _progress(run) -> str:
     if run.status == Run.RUNNING:
+        seconds = "30 to 60" if "chronos" in MODELS_BY_KEY else "10 to 20"  # Chronos-Bolt triples the run time
         return (
-            f"Forecasting from {ORIGINS} trading days with {len(MODELS)} models. This usually takes 10 to 20 seconds."
+            f"Forecasting from {ORIGINS} trading days with {len(MODELS)} models. This usually takes {seconds} seconds."
         )
     ahead = Run.objects.filter(
         status=Run.QUEUED, updated__lt=run.updated, updated__gte=timezone.now() - STALLED_AFTER
