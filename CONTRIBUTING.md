@@ -35,7 +35,8 @@ Keep each pull request to one change. A fix with a test that fails without it is
 
 ## Adding a model
 
-The README explains the mechanics: subclass `Model`, return a `Forecast`, add an instance to `MODELS`.
+The README explains the mechanics: subclass `Model`, return a `Forecast`, add an instance to `MODELS`. A model
+that belongs in its own package can register under the `backcast.models` entry point group instead.
 
 A model only ever receives the prices up to the forecast date, and it must not reach for anything else, such as data
 downloaded inside `forecast`, that could carry information from after that date. The leakage test in

@@ -4,12 +4,13 @@ Every model turns a price history into an h-step forecast path with quantiles fr
 80% interval. The models work on log prices and exponentiate their forecasts: prices can't fall below zero and move in
 proportion to their level, and a quantile stays a quantile through the exponential, so the point forecast is the
 median. To add one, subclass `Model`, implement `forecast` (or `fit`, if estimating is slow), and append an
-instance to `MODELS`.
+instance to `MODELS`, or register it from another package under the `backcast.models` entry point group.
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache, partial
+from importlib.metadata import entry_points
 from importlib.util import find_spec
 
 import lightgbm as lgb
@@ -19,6 +20,7 @@ from scipy.stats import norm
 from statsforecast.models import AutoARIMA, AutoETS, AutoTheta
 
 LEVEL = 80
+ENTRY_POINTS = "backcast.models"
 QUANTILES = np.linspace(0.1, 0.9, 9)
 Z = norm.ppf(QUANTILES)[:, None]  # standard normal quantiles, one row per forecast quantile
 
@@ -173,6 +175,27 @@ def _chronos(checkpoint: str):
     return BaseChronosPipeline.from_pretrained(checkpoint, device_map=device, torch_dtype=torch.float32)
 
 
+def _with_plugins(models: list[Model]) -> list[Model]:
+    """The built-in models plus those installed packages register. A broken plugin stops everything: a benchmark that
+    quietly left out a model you installed would look complete when it isn't.
+    """
+    models = list(models)
+    for entry in entry_points(group=ENTRY_POINTS):
+        model = entry.load()
+        model = model() if isinstance(model, type) else model
+        fields = ("key", "name", "family", "summary")
+        if not isinstance(model, Model) or not all(isinstance(getattr(model, field, None), str) for field in fields):
+            raise TypeError(
+                f"The model plugin {entry.name!r} ({entry.value}) must be a Model subclass or instance with key, "
+                "name, family and summary strings."
+            )
+        taken = next((other for other in models if other.key == model.key), None)
+        if taken:
+            raise ValueError(f"The model plugin {entry.name!r} uses the key {model.key!r}, which {taken!r} has.")
+        models.append(model)
+    return models
+
+
 MODELS: list[Model] = [
     Naive(),
     Drift(),
@@ -198,5 +221,5 @@ MODELS: list[Model] = [
 ]
 if find_spec("chronos"):  # installed with the `foundation` extra
     MODELS.append(Chronos())
-
+MODELS = _with_plugins(MODELS)
 MODELS_BY_KEY = {model.key: model for model in MODELS}
