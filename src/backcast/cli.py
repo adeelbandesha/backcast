@@ -7,8 +7,7 @@ import pandas as pd
 
 from . import volatility
 from .data import DataError, SourceError, load_prices, normalize_symbol
-from .evaluate import HORIZONS, headline, run_backtest, score, trend_note
-from .models import MODELS_BY_KEY
+from .evaluate import HORIZONS, run_backtest, score
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -70,31 +69,22 @@ def main(argv: list[str] | None = None) -> int:
         _print_volatility(report)
         return 0
 
-    # Scored forecasts are keyed by their own name, not a model's.
-    names = report.board.model.map(lambda key: MODELS_BY_KEY[key].name if key in MODELS_BY_KEY else key)
-    board = report.board.assign(model=names)
-    board = board.assign(mae=board.mae * 100).rename(columns={"mae": "mae_pct"})  # log error, read as a percentage
-    summary = f"{headline(report.verdict)} {trend_note(report.verdict)}".strip()
+    board = report.table()
     verdict = report.verdict
     if args.command == "score":
         print(f"\n{prices.name}: {verdict.origins} of your {args.horizon}-day forecasts, scored against naive\n")
     else:
         print(f"\n{prices.name}: {args.horizon}-day forecasts from {verdict.origins} trading days\n")
-    print(f"{summary}\nSPA p-value that no model beats naive: {verdict.p_value:.3f}\n")
+    print("\n".join(report.summary()), end="\n\n")
     print(board.to_string(index=False, float_format=lambda value: f"{value:.3f}", na_rep="—"), end="\n\n")
     return 0
 
 
 def _print_volatility(report) -> None:
-    result = report.verdict
-    board = report.board.assign(model=report.board.model.map(lambda key: volatility.MODELS_BY_KEY[key].name))
-    print(f"\n{report.prices.name}: {report.horizon}-day volatility forecasts from {result.origins} trading days\n")
-    print(f"{volatility.headline(result)} {volatility.long_run_note(result)}")
-    print(f"Realized volatility over the period: {result.realized:.1%} a year.")
-    print(f"SPA p-value that no model beats naive: {result.p_value:.3f}")
-    print(f"SPA p-value that no model beats the long-run average: {result.long_run_p_value:.3f}")
-    print("QLIKE: lower is better; gain is how much lower than naive's. Volatility is annualized.\n")
-    print(board.to_string(index=False, float_format=lambda value: f"{value:.3f}", na_rep="—"), end="\n\n")
+    origins = report.verdict.origins
+    print(f"\n{report.prices.name}: {report.horizon}-day volatility forecasts from {origins} trading days\n")
+    print("\n".join(report.summary()), end="\n\n")
+    print(report.table().to_string(index=False, float_format=lambda value: f"{value:.3f}", na_rep="—"), end="\n\n")
 
 
 def _django(*command: str) -> None:

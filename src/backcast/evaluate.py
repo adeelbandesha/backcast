@@ -1,5 +1,6 @@
 """Walk-forward evaluation: every model is scored only on data it had not seen."""
 
+import html
 import multiprocessing
 import os
 from concurrent.futures import ProcessPoolExecutor
@@ -313,6 +314,28 @@ class Report:
     verdict: Verdict
     future_dates: pd.DatetimeIndex
     future: dict[str, Forecast]
+
+    def table(self) -> pd.DataFrame:
+        """The leaderboard with model names, and the error as a percentage of the price."""
+        # Scored forecasts are keyed by their own name, not a model's.
+        names = self.board.model.map(lambda key: MODELS_BY_KEY[key].name if key in MODELS_BY_KEY else key)
+        board = self.board.assign(model=names)
+        return board.assign(mae=board.mae * 100).rename(columns={"mae": "mae_pct"})  # log error, read as a percentage
+
+    def summary(self) -> list[str]:
+        return [
+            f"{headline(self.verdict)} {trend_note(self.verdict)}".strip(),
+            f"SPA p-value that no model beats naive: {self.verdict.p_value:.3f}",
+        ]
+
+    def _repr_html_(self) -> str:
+        return report_html(self.summary(), self.table())
+
+
+def report_html(lines: list[str], table: pd.DataFrame) -> str:
+    """A report as Jupyter shows it: the summary lines, then the table."""
+    paragraphs = "".join(f"<p>{html.escape(line)}</p>" for line in lines)
+    return paragraphs + table.to_html(index=False, float_format=lambda value: f"{value:.3f}", na_rep="—")
 
 
 def run_backtest(prices: pd.Series, horizon: int, models: list[Model] = MODELS) -> Report:

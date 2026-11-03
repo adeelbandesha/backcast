@@ -36,8 +36,11 @@ from backcast import headline, load_prices, run_backtest
 prices = load_prices("AAPL")  # five years of daily closes, adjusted for splits
 report = run_backtest(prices, horizon=5)  # about 15 seconds on four cores, 45 with Chronos-Bolt
 print(headline(report.verdict))
-print(report.board)  # the leaderboard, one row per model
+print(report.table())  # the leaderboard, one row per model, with model names
 ```
+
+In Jupyter, a report on its own in a cell shows the verdict and the leaderboard as a table. `report.board` has the
+same numbers keyed by model, for your own analysis.
 
 | Function | What it does |
 |---|---|

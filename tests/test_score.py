@@ -79,6 +79,9 @@ def test_the_headline_names_the_scored_forecasts(backtest):
     report = score(worse, prices, 5)
     assert headline(report.verdict).startswith("Your forecasts didn't beat the naive forecast: the error was")
 
+    shown = report._repr_html_()  # what Jupyter displays
+    assert shown.startswith("<p>Your forecasts didn&#x27;t beat") and "<table" in shown and "mae_pct" in shown
+
 
 def test_naive_is_taken():
     with pytest.raises(ValueError, match="benchmark"):
