@@ -25,7 +25,33 @@ only on prices the model hadn't seen, and then tests whether the difference is b
 | Add Amazon's pretrained Chronos-Bolt model | `pip install "backcast[foundation]"` | [Chronos-Bolt](#chronos-bolt) |
 | Rerun the S&P 500 study (needs a clone) | `uv run python scripts/study.py run` | [Running the study yourself](#running-the-study-yourself) |
 
-Every command takes `--help`, and the Python functions in the examples have docstrings, so `help(score)` works too.
+Every command takes `--help`.
+
+## Use it from Python
+
+```python
+from backcast import headline, load_prices, run_backtest
+
+prices = load_prices("AAPL")  # five years of daily closes, adjusted for splits
+report = run_backtest(prices, horizon=5)  # about 15 seconds on four cores, 45 with Chronos-Bolt
+print(headline(report.verdict))
+print(report.board)  # the leaderboard, one row per model
+```
+
+| Function | What it does |
+|---|---|
+| `load_prices(symbol)` | Daily closes from the price source, Yahoo unless [you choose another](#price-data) |
+| `run_backtest(prices, horizon)` | Backtests every model and tests whether any beats naive. Returns a `Report` |
+| `walk_forward(prices, horizon)` | Only the forecasts and their errors, one row per model and date, for your own analysis |
+| `score(forecasts, prices, horizon)` | Scores forecasts you made elsewhere: see [Scoring your own forecasts](#scoring-your-own-forecasts) |
+| `headline(report.verdict)` | The verdict in one sentence |
+| `volatility.run_backtest(prices, horizon)` | The volatility backtest: see [Volatility](#volatility) |
+
+`help(backcast)` lists them, and `help()` on any one explains its arguments and what comes back.
+
+In a script, put these calls under `if __name__ == "__main__":`. The backtest runs in worker processes that import
+your script again. Without the guard, Python stops with a RuntimeError about the "bootstrapping phase". A notebook
+or the Python prompt doesn't need it.
 
 - [How it works](#how-it-works)
 - [What it found](#what-it-found)
@@ -330,8 +356,7 @@ Python:
 ```python
 import pandas as pd
 
-from backcast.data import load_prices
-from backcast.evaluate import headline, score
+from backcast import headline, load_prices, score
 
 forecasts = pd.read_csv("my_forecasts.csv")  # columns: date, forecast, and optionally q10 ... q90
 report = score(forecasts, load_prices("AAPL"), horizon=5)

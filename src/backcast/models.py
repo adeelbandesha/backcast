@@ -45,6 +45,9 @@ class Model:
     family: str
     summary: str
 
+    def __repr__(self) -> str:
+        return self.name
+
     def forecast(self, y: np.ndarray, h: int) -> Forecast:
         return self.fit(y, h)(y)
 

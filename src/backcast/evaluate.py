@@ -300,6 +300,11 @@ def trend_note(result: Verdict) -> str:
 
 @dataclass(frozen=True)
 class Report:
+    """A backtest's output. `board` is the leaderboard, one row per model; `verdict` sums it up (see `headline`);
+    `results` has one row per model and forecast date; `trend` splits the board into up and down markets; `future`
+    is each model's forecast from the last price, for `future_dates`.
+    """
+
     prices: pd.Series
     horizon: int
     results: pd.DataFrame
@@ -311,6 +316,7 @@ class Report:
 
 
 def run_backtest(prices: pd.Series, horizon: int, models: list[Model] = MODELS) -> Report:
+    """Backtest every model on `prices` (from `load_prices`) at `horizon` trading days, and test it against naive."""
     results = walk_forward(prices, horizon, models)
     board = leaderboard(results, horizon)
     future_dates, future = future_paths(prices, horizon, models)

@@ -37,6 +37,9 @@ class VolatilityModel:
     family: str
     summary: str
 
+    def __repr__(self) -> str:
+        return self.name
+
     def fit(self, returns: np.ndarray, h: int) -> Callable[[np.ndarray], float]:
         """Estimate on `returns` and return a function that forecasts the variance of the next h days' log return
         from any later history, keeping those estimates.
@@ -286,6 +289,7 @@ class Report:
 
 
 def run_backtest(prices: pd.Series, horizon: int, models: list[VolatilityModel] = MODELS) -> Report:
+    """Backtest the volatility models on `prices` at `horizon` trading days, against naive and the long-run average."""
     results = walk_forward(prices, horizon, models)
     board = leaderboard(results, horizon)
     return Report(prices, horizon, results, board, verdict(board, results, horizon))
