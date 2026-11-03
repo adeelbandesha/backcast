@@ -11,7 +11,7 @@ predictions over the real price, the two lines look close, and that gets taken a
 that just copies yesterday's price would look every bit as close. Backcast scores each model against that copy,
 only on prices the model hadn't seen, and then tests whether the difference is bigger than luck.
 
-![Backtest results for AAPL at a 5-day horizon: the verdict, the trend note, the SPA p-value and the leaderboard](docs/results.png)
+![Backtest results for AAPL at a 5-day horizon: the verdict, the trend note, the SPA p-value and the leaderboard](https://raw.githubusercontent.com/adeelbandesha/backcast/main/docs/results.png)
 
 - [How it works](#how-it-works)
 - [What it found](#what-it-found)
@@ -79,7 +79,7 @@ At five and twenty days, the real stocks turned up no more winners than the plac
 more than luck explains, but the edge is small: 0.1% to 0.5% less error than naive, mostly because a day's move
 tends to be partly undone the next day. The median correlation between one day's return and the next was −0.024.
 
-![The share of stocks where a model won at each horizon, against the placebos, and where the SPA p-values fell](docs/findings.png)
+![The share of stocks where a model won at each horizon, against the placebos, and where the SPA p-values fell](https://raw.githubusercontent.com/adeelbandesha/backcast/main/docs/findings.png)
 
 The Findings page in the web app (`/findings/`) has the full results, each model on its own, the stocks where a
 model won, and the dataset to download. The member list is today's, taken from Wikipedia (the revision is recorded
@@ -143,6 +143,11 @@ pip install -e .
 backcast run SPY --horizon 5
 ```
 
+You also need a C++ compiler. statsforecast, which supplies ETS, ARIMA and Theta, publishes no wheel for Python
+3.13, so uv and pip both build it from source during the install. On Linux that means `g++` (`build-essential` on
+Debian and Ubuntu), on macOS the Xcode command line tools (`xcode-select --install`), and on Windows the Microsoft
+C++ Build Tools. Without one, the install stops with a build error for statsforecast.
+
 A backtest needs roughly 40 to 80 seconds of CPU time, spread across every core, so a four-core machine finishes
 in 10 to 20 seconds. The built-in models all run on the CPU, and a GPU doesn't help them. This is a real run from
 23 October 2026:
@@ -190,7 +195,7 @@ Each backtest page has the verdict, the leaderboard, the same comparison split i
 of the next few trading days as each model sees them, and a running total of how far the chosen model has pulled
 ahead of naive, or fallen behind, over the two years. Every chart has a table of the numbers behind it.
 
-![The forecast chart and the running total against naive for AAPL, comparing Drift with naive](docs/charts.png)
+![The forecast chart and the running total against naive for AAPL, comparing Drift with naive](https://raw.githubusercontent.com/adeelbandesha/backcast/main/docs/charts.png)
 
 ## The models
 
@@ -543,12 +548,14 @@ code under `if __name__ == "__main__":`. Piping it into `python -` won't work.
 
 ## Contributing
 
-Fixes and new models are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, the checks CI runs, and what a
-new model has to guarantee. Please report security problems privately, as described in [SECURITY.md](SECURITY.md).
+Fixes and new models are welcome.
+[CONTRIBUTING.md](https://github.com/adeelbandesha/backcast/blob/main/CONTRIBUTING.md) covers setup, the checks CI
+runs, and what a new model has to guarantee. Please report security problems privately, as described in
+[SECURITY.md](https://github.com/adeelbandesha/backcast/blob/main/SECURITY.md).
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/adeelbandesha/backcast/blob/main/LICENSE).
 
 The web app bundles a few things written by other people. [D3](https://d3js.org) and
 [Observable Plot](https://observablehq.com/plot/) are under the ISC license. The IBM Plex fonts are under the SIL Open
