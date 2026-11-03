@@ -447,6 +447,11 @@ calendars, the price source checks and the CSV source, the study's placebo, and 
 the price download mocked out. They run the jobs inside the request (Huey's immediate mode) and keep their SQLite
 files in a temporary folder.
 
+`tests/test_browser.py` drives a real browser with Playwright to test the JavaScript: the charts, the model picker,
+the theme toggle redrawing them, a run page picking up its results, the upload form, symbol search, and that no page
+scrolls sideways on a phone. It uses your installed Google Chrome, so there's no browser to download, but Chrome
+has to be installed. Any error in the browser console fails the test.
+
 The backtest pool uses the `forkserver` start method, because forked workers deadlocked on OpenMP state left over
 from the parent. As a result, a script that calls `walk_forward` has to live in a real file and keep its top-level
 code under `if __name__ == "__main__":`. Piping it into `python -` won't work.
