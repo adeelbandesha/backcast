@@ -13,6 +13,19 @@ only on prices the model hadn't seen, and then tests whether the difference is b
 
 ![Backtest results for AAPL at a 5-day horizon: the verdict, the trend note, the SPA p-value and the leaderboard](docs/results.png)
 
+- [How it works](#how-it-works)
+- [What it found](#what-it-found)
+- [Limits](#limits)
+- [Getting started](#getting-started)
+- [The web app](#the-web-app)
+- [The models](#the-models)
+- [Volatility](#volatility)
+- [Scoring your own forecasts](#scoring-your-own-forecasts)
+- [Price data](#price-data)
+- [How it's built](#how-its-built)
+- [Deploying](#deploying)
+- [Development](#development)
+
 ## How it works
 
 You give it a ticker and a horizon of 1, 5 or 20 trading days. Backcast then:
@@ -46,6 +59,72 @@ together and asks whether the best of them beats naive by more than luck would. 
 the stock was above or below its 200-day average on the forecast date, and when the best model won by betting the
 same direction nearly every day of a period that trended that way, the verdict says so. The Method page in the web
 app goes through all of this in more detail.
+
+## What it found
+
+Across the S&P 500, no model beat naive by a margin worth having.
+
+The study ran the same backtest on every current S&P 500 member at all three horizons, on closes up to 23 October
+2026, and counted the stocks where Hansen's SPA test found a winner. 498 of the 503 members had enough history. To
+see what chance alone produces, each stock was also backtested on placebos: its own daily moves, replayed with
+random signs, drawn five times. Any winner found on a placebo is a false positive.
+
+| Horizon | Stocks with a winner | Placebo draws |
+| ------- | -------------------: | ------------: |
+| 1 day   |           8 of 498   |       1 to 5  |
+| 5 days  |           2 of 498   |       0 to 7  |
+| 20 days |           2 of 498   |      2 to 20  |
+
+At five and twenty days, the real stocks turned up no more winners than the placebos did. At one day there were
+more than luck explains, but the edge is small: 0.1% to 0.5% less error than naive, mostly because a day's move
+tends to be partly undone the next day. The median correlation between one day's return and the next was −0.024.
+
+![The share of stocks where a model won at each horizon, against the placebos, and where the SPA p-values fell](docs/findings.png)
+
+The Findings page in the web app (`/findings/`) has the full results, each model on its own, the stocks where a
+model won, and the dataset to download. The member list is today's, taken from Wikipedia (the revision is recorded
+in `study.json`). That adds survivorship bias: companies that fell out of the index over the period aren't in it,
+and the ones that are did well enough to stay.
+
+### Running the study yourself
+
+Run it from a clean checkout of a single commit, so every row comes from the same code:
+
+```bash
+git worktree add --detach ../backcast-study main
+cd ../backcast-study && uv sync
+uv run python scripts/study.py run --end 2026-10-23
+uv run python scripts/study.py export
+```
+
+The study is 18 backtests per stock (the real prices and five placebos, at three horizons), about 9,000 in all,
+or roughly 100 CPU-hours. That is about a day on four cores, and less in proportion with more. A GPU doesn't
+help: the models are statistical fits and a small LightGBM, all on the CPU. Keep the machine from sleeping while
+it runs (on Linux, put `systemd-inhibit --what=sleep:idle` in front of the command). Stop it whenever you like
+and run the same command again to carry on.
+
+Prices are saved in the work folder the first time they load, so a resumed run and every placebo use exactly the
+same data. A download that fails is retried on the next run. `export` refuses rows from more than one version of
+the code.
+
+## Limits
+
+Read the results with these in mind:
+
+- Two years is one stretch of market history. A result can hold over these two years and not the next two.
+- A stock needs about two and a half years of history before it can be tested: 500 days before the first forecast
+  and at least 100 forecasts after it.
+- Only the price history goes in. There's no volume, no fundamentals, no news.
+- Errors are measured on prices, not on trading returns. A model that beats naive here could still lose money once
+  you add costs.
+- Dividends aren't added back. On the day a stock goes ex-dividend its price drops by about the dividend, and none
+  of the models forecast that.
+- Future dates follow the exchange's holiday calendar for most major exchanges. For the rest, they skip weekends
+  only.
+- By default, prices come through [yfinance](https://github.com/ranaroussi/yfinance), an unofficial Yahoo Finance
+  client, and Yahoo's terms apply to the data.
+
+None of this is investment advice.
 
 ## Getting started
 
@@ -144,8 +223,11 @@ GB of CUDA libraries. pip takes PyTorch from PyPI unless you point it at the CPU
 NVIDIA GPU if PyTorch was built with CUDA and finds one, on the GPU of an Apple silicon Mac, and on the CPU otherwise.
 With uv, an NVIDIA GPU needs the CUDA build installed over the CPU one, from PyTorch's index for your CUDA version
 (see pytorch.org): `uv pip install torch --index-url <that index>`. A later `uv sync` puts the CPU build back. With
-the extra installed, Chronos-Bolt joins every backtest. The first run downloads its weights (180 MB) from Hugging Face. Backcast uses the small version, 48M parameters. It takes about 95 ms per forecast
-on one core, so a backtest takes about three times as long: 47 seconds instead of 15 on a four-core laptop.
+the extra installed, Chronos-Bolt joins every backtest.
+
+The first run downloads its weights (180 MB) from Hugging Face. Backcast uses the small version, with 48M
+parameters. It takes about 95 ms per forecast on one core, so a backtest takes about three times as long: 47
+seconds instead of 15 on a four-core laptop.
 
 It sees log prices, like the other models. On four stocks it was tried with both: raw prices did slightly better
 on AAPL and NVDA, but on PTON, which lost most of its value, raw prices left it 30% worse than naive at one day
@@ -282,14 +364,72 @@ Whatever the source, Backcast checks the prices before a backtest sees them: one
 trimmed to the same five years. Problems are reported with the date they occur on. A source that can't be imported
 stops the command line with an explanation and stops the web app at startup.
 
-## Project layout
+## How it's built
+
+```mermaid
+flowchart LR
+    browser([Browser])
+    site["Site<br/>Django + Gunicorn"]
+    cache[("Disk cache<br/>prices, searches")]
+    source["Price source<br/>Yahoo, CSV or a plugin"]
+    queue[("Job queue<br/>Huey on SQLite")]
+    worker["Worker<br/>one backtest at a time"]
+    pool["Process pool<br/>one process per core"]
+    runs[("Saved runs<br/>SQLite")]
+
+    browser -- "/backtest/AAPL/" --> site
+    site -- prices --> cache
+    cache -. "on a miss" .-> source
+    site -- "new run" --> queue
+    queue --> worker
+    worker -- "walk-forward" --> pool
+    worker -- "rendered results" --> runs
+    site -- "/runs/id/" --> runs
+    browser -. "polls until done" .-> site
+```
+
+A backtest request loads the prices (from the disk cache if they're less than an hour old), fingerprints them
+together with the settings and the code version, and looks for a saved run with that fingerprint. If there is one,
+the browser goes straight to it. If not, the site queues a new run and sends the browser to the run's page, which
+polls until the worker has finished.
+
+The worker runs one backtest at a time, because each one already keeps every core busy: the forecast origins are
+split into blocks and the blocks are spread over a process pool. When a run finishes, the worker saves the rendered
+results, not just the numbers, so a run's page keeps looking the way it did even after the templates change. The
+command line uses the same engine without any of this, and scoring an upload is fast enough (about 0.2 seconds) to
+run inside the request.
+
+There is no Redis and no database server. The queue and the saved runs are two SQLite files, which is plenty for a
+single machine running one job at a time.
+
+### Decisions and the evidence for them
+
+Most of these were settled by an experiment rather than by preference. Where a script is named, it re-runs that
+experiment.
+
+| Decision | Instead of | Why |
+| --- | --- | --- |
+| A forecast from every trading day for two years (504 origins) | 30 non-overlapping windows | Moving the 30 windows by one day turned AAPL from a significant result into noise. 30 is too few. |
+| Re-estimate the models every 20 trading days | Every day | Daily refits moved each model's error relative to naive by 0.2 points on average and 1.3 at most, changed no verdict, and took 17 times as long (`scripts/refit_check.py`). |
+| Fit and score on log prices | Raw prices | On raw prices, the intervals for BYND, which lost most of its value, went below zero on all 504 days. Log prices keep every forecast positive, and the point forecast becomes the median. |
+| Diebold-Mariano with equal weights and the Harvey-Leybourne-Newbold correction | Newey-West weights | Simulated with no real edge, it called 5 to 7% of results significant at the 5% level. Newey-West called 10 to 11%, and a plain t-test called 20-day results significant two times in three. |
+| Hansen's SPA test for the headline | Testing the best model on its own | The best of several models is the one most likely to have been lucky. SPA allows for the search. |
+| Five placebo draws in the study | One | Each placebo day's sign is shared by every stock, so the market keeps moving together, but that makes one draw a single random market path. Five show how much chance varies. |
+| Closes adjusted for splits, not dividends | Yahoo's adjusted close | Dividend adjustment rewrites every earlier price each time a dividend is paid. Checked against NVDA's 2024 split and a KO ex-dividend day. |
+| Judge volatility models against the long-run average as well as naive | Naive only | On shuffled returns, with no clustering to find, the models still beat naive on 75 to 84% of stocks (`scripts/volatility_check.py`). |
+| Huey and SQLite | Celery, Redis and a database server | One machine, one job at a time. Two files to back up, nothing else to run. |
+| Run ids that hash the prices, settings and code version | Random ids | The same inputs always reach the same saved run, and a link always shows what it showed. New prices make a new run. |
+| A `forkserver` process pool | The default `fork` | Forked workers deadlocked on OpenMP state left over from the parent process. |
+| Uploaded forecasts are scored and thrown away | Saving them like a run | Scoring takes a fraction of a second, and people's forecasts have no reason to stay on a server. |
+
+### Project layout
 
 ```
 src/backcast/
   data.py        loads and checks prices from the configured source; trading calendars
   sources/       the built-in price sources: Yahoo Finance and CSV files
   models.py      the forecasting models
-  evaluate.py    walk-forward backtest, metrics, significance tests, the verdict
+  evaluate.py    walk-forward backtest, metrics, significance tests, the verdict, scoring uploads
   volatility.py  the volatility models, their backtest and verdict
   study.py       the S&P 500 study's placebo and dataset rows
   version.py     the version recorded with every run
@@ -297,7 +437,7 @@ src/backcast/
   web/           Django app: views, templates, CSS, and the charts (Observable Plot)
     tasks.py     the background jobs: running and saving a backtest, and the nightly examples
     models.py    the saved run
-tests/           engine, data, price source, study and view tests; none of them touch the network
+tests/           engine, data, price source, study, view and browser tests; none of them touch the network
 scripts/         refit_check.py, the experiment behind the refit interval; study.py, the S&P 500 study;
                  volatility_check.py, the volatility backtest across the study's stocks
 ```
@@ -368,61 +508,6 @@ Because a new run keeps every core busy, each visitor can start only a limited n
 count. Behind a reverse proxy, set `BACKCAST_CLIENT_IP_HEADER` (for example `X-Forwarded-For`), or
 every visitor appears to come from the proxy and they all share one limit. Only set it if the proxy overwrites
 that header, since anyone can send it.
-
-## Limits
-
-Read the results with these in mind:
-
-- Two years is one stretch of market history. A result can hold over these two years and not the next two.
-- A stock needs about two and a half years of history before it can be tested: 500 days before the first forecast
-  and at least 100 forecasts after it.
-- Only the price history goes in. There's no volume, no fundamentals, no news.
-- Errors are measured on prices, not on trading returns. A model that beats naive here could still lose money once
-  you add costs.
-- Dividends aren't added back. On the day a stock goes ex-dividend its price drops by about the dividend, and none
-  of the models forecast that.
-- Future dates follow the exchange's holiday calendar for most major exchanges. For the rest, they skip weekends
-  only.
-- By default, prices come through [yfinance](https://github.com/ranaroussi/yfinance), an unofficial Yahoo Finance
-  client, and Yahoo's terms apply to the data.
-
-None of this is investment advice.
-
-## The S&P 500 study
-
-One backtest says little: a stock where some model beats naive could just be lucky. The study runs the same
-backtest on every current S&P 500 member at every horizon and counts how often a model wins by more than chance.
-
-To see what chance alone produces, every stock is also backtested on placebos: its own daily moves replayed with
-random signs, drawn five times. Any winner the tests find on a placebo is a false positive. The Findings page
-(`/findings/`) has the results and explains the placebo in full.
-
-On closes up to 23 October 2026, none of the models beat naive by a useful margin. Out of 498 stocks, the SPA test
-flagged a winner on 8 at one day, 2 at five days and 2 at twenty days. The placebo draws gave 1 to 5, 0 to 7 and
-2 to 20. The one-day wins are more than luck explains, but small: 0.1% to 0.5% less error than naive, mostly from
-daily moves being partly undone the next day.
-
-The member list is today's, taken from Wikipedia (the revision is recorded in `study.json`). That adds survivorship
-bias: companies that fell out of the index over the period aren't in it, and the ones that are did well enough to
-stay.
-
-To reproduce it, run the study from a clean checkout of one commit, so every row comes from the same code:
-
-```bash
-git worktree add --detach ../backcast-study main
-cd ../backcast-study && uv sync
-uv run python scripts/study.py run --end 2026-10-23
-uv run python scripts/study.py export
-```
-
-The study is 18 backtests per stock (the real prices and five placebos, at three horizons), about 9,000 in all,
-or roughly 100 CPU-hours. That is about a day on four cores, and less in proportion with more. A GPU doesn't
-help: the models are statistical fits and a small LightGBM, all on the CPU. Keep the machine from sleeping while
-it runs (on Linux, put `systemd-inhibit --what=sleep:idle` in front of the command). Stop it whenever you like
-and run the same command again to carry on.
-Prices are saved in the work folder the first time they load, so a resumed run and every placebo use exactly the
-same data. A download that fails is retried on the next run. `export` refuses rows from more than one version of
-the code.
 
 ## Development
 
