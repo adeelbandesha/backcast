@@ -1,0 +1,99 @@
+{% load humanize %}{% with r=results %}
+<section class="verdict" data-outcome="{% if r.verdict.significant %}significant{% elif r.verdict.beaten %}noise{% else %}unbeaten{% endif %}">
+  <h2 class="headline">{{ r.headline }}</h2>
+  <p class="trend-note">{{ r.long_run_note }}</p>
+  <p class="verdict-meta">
+    Forecasts of the volatility over the next {% if r.horizon == 1 %}trading day{% else %}{{ r.horizon }} trading days{% endif %}, made on each of
+    {{ r.origins }} trading days,
+    <time datetime="{{ r.first_origin|date:'Y-m-d' }}">{{ r.first_origin|date:'j M Y' }}</time> to
+    <time datetime="{{ r.last_target|date:'Y-m-d' }}">{{ r.last_target|date:'j M Y' }}</time>.
+    Prices to the close of <time datetime="{{ r.as_of|date:'Y-m-d' }}">{{ r.as_of|date:'j M Y' }}</time>.
+  </p>
+  <p class="verdict-meta">The stock's realized volatility over this period was {{ r.realized }} a year.</p>
+  <p class="verdict-meta">
+    Hansen's SPA test of whether any model beats naive: p = {{ r.spa_p_value }}. Whether any beats the long-run
+    average: p = {{ r.long_run_p_value }}.
+  </p>
+</section>
+
+<section class="leaderboard" aria-labelledby="leaderboard-title">
+  <h2 id="leaderboard-title">Leaderboard</h2>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">Model</th>
+          <th scope="col" class="num">QLIKE</th>
+          <th scope="col" class="num">vs naive</th>
+          <th scope="col" class="num">Days won</th>
+          <th scope="col" class="num">Average forecast</th>
+          <th scope="col" class="num">p-value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in r.rows %}
+          <tr{% if row.key == 'naive' %} class="baseline-row"{% endif %}>
+            <th scope="row">
+              <span class="model-name">{{ row.name }}</span>
+              <span class="model-family">{{ row.family }}{% if row.best %} · best model{% endif %}</span>
+            </th>
+            <td class="num">{{ row.qlike }}</td>
+            <td class="num {{ row.gain.tone }}">{{ row.gain.text }}</td>
+            <td class="num">{{ row.win_rate }}</td>
+            <td class="num">{{ row.volatility }}</td>
+            <td class="num">{{ row.p_value }}{% if row.significant %}<span class="significant" title="p below {{ r.significance }}">*</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <dl class="notes">
+    <div><dt>QLIKE</dt><dd>The average loss of the variance forecasts against the realized variance, the sum of the squared daily returns. Lower is better. Only differences between models mean anything, not the level.</dd></div>
+    <div><dt>vs naive</dt><dd>The model's QLIKE minus naive's. Negative is better. A difference of 0.1 is large: it is the extra loss from forecasting volatility about 18% too low, or 26% too high, every day.</dd></div>
+    <div><dt>Days won</dt><dd>Share of the {{ r.origins }} forecasts where the model's loss was lower than naive's.</dd></div>
+    <div><dt>Average forecast</dt><dd>The model's average forecast as annualized volatility. The realized volatility was {{ r.realized }}.</dd></div>
+    <div><dt>p-value</dt><dd>Diebold-Mariano test against naive, allowing for overlapping forecasts and adjusted for testing {{ r.rivals|apnumber }} models (Holm). An asterisk marks p below {{ r.significance }}.</dd></div>
+  </dl>
+</section>
+
+<section class="charts" aria-labelledby="charts-title">
+  <h2 id="charts-title">Forecasts</h2>
+  <fieldset class="segmented model-picker">
+    <legend>Compare with naive</legend>
+    <div class="segmented-options">
+      {% for row in r.rows %}{% if row.key != 'naive' %}
+        <input type="radio" name="model" value="{{ row.key }}" id="model-{{ row.key }}"{% if row.best %} checked{% endif %}>
+        <label for="model-{{ row.key }}">{{ row.name }}</label>
+      {% endif %}{% endfor %}
+    </div>
+  </fieldset>
+
+  <figure class="chart" data-chart="volatility">
+    <figcaption>
+      <h3>Forecast and realized volatility</h3>
+      <p>
+        Each day's forecast of the next {% if r.horizon == 1 %}trading day{% else %}{{ r.horizon }} trading days{% endif %}, against what came, all
+        annualized. {% if r.horizon == 1 %}One day's realized volatility is a single move, so the dots scatter widely;
+        that noise is why the losses are averaged over every day.{% else %}The dots are the volatility that came.{% endif %}
+        The largest moves are cut off at the top so the forecasts stay readable; the table has every day.
+      </p>
+    </figcaption>
+    <div class="chart-legend" aria-hidden="true"></div>
+    <div class="chart-plot"></div>
+    <details class="chart-data"><summary>Show the data</summary><div class="table-scroll"></div></details>
+  </figure>
+
+  <figure class="chart" data-chart="cumulative">
+    <figcaption>
+      <h3>Running total against naive</h3>
+      <p>
+        Each day adds how much lower the model's QLIKE loss was than naive's. The line rises while the model is
+        winning and falls while it is losing, so a steady climb is a lasting edge and a jump is one stretch.
+      </p>
+    </figcaption>
+    <div class="chart-plot"></div>
+    <details class="chart-data"><summary>Show the data</summary><div class="table-scroll"></div></details>
+  </figure>
+</section>
+{{ r.chart|json_script:"chart-data" }}
+{% endwith %}

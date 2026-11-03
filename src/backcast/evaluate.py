@@ -207,8 +207,8 @@ def _diebold_mariano(improvement: np.ndarray, horizon: int) -> float:
     return float(2 * t.sf(abs(statistic), n - 1))
 
 
-def superior_predictive_ability(results: pd.DataFrame, horizon: int) -> float:
-    """Hansen's (2005) SPA test: the p-value for "no model is more accurate than naive".
+def superior_predictive_ability(results: pd.DataFrame, horizon: int, benchmark: str = "naive") -> float:
+    """Hansen's (2005) SPA test: the p-value for "no model is more accurate than the benchmark", naive by default.
 
     It looks at the best result across all the models together, so trying more models doesn't make a lucky win
     more likely to pass. A stationary bootstrap keeps runs of neighbouring days together; its mean block is at
@@ -218,12 +218,12 @@ def superior_predictive_ability(results: pd.DataFrame, horizon: int) -> float:
     forecasts = results.pivot(index="origin", columns="model", values="predicted")
     # A model that matched naive on every day can't beat it, and its differences, zero or rounding noise, would
     # break the studentized statistic (arch reports p = 0 for exact zeros).
-    rivals = [key for key in losses if key != "naive" and not _tied(forecasts[key], forecasts.naive).all()]
+    rivals = [key for key in losses if key != benchmark and not _tied(forecasts[key], forecasts[benchmark]).all()]
     rivals = losses[rivals]
     if rivals.empty:
         return np.nan
     block = max(horizon, int(np.sqrt(len(losses))))
-    test = SPA(losses.naive, rivals, block_size=block, reps=1000, seed=0)
+    test = SPA(losses[benchmark], rivals, block_size=block, reps=1000, seed=0)
     test.compute()
     return float(test.pvalues["consistent"])
 

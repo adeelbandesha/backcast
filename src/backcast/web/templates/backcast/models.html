@@ -27,6 +27,21 @@
     the stock: it learned from a large collection of other time series. It makes runs about three times as long.
   </p>
 
+  <h2>Volatility</h2>
+  <p>
+    The volatility backtest forecasts how much the price will move over the next <var>h</var> trading days, in
+    either direction: the variance of the <var>h</var>-day return. Naive here assumes the last month's volatility
+    carries on.
+  </p>
+  <dl class="model-list">
+    {% for model in volatility_models %}
+      <div>
+        <dt><span class="model-name">{{ model.name }}</span> <span class="model-family">{{ model.family }}</span></dt>
+        <dd>{{ model.summary }}</dd>
+      </div>
+    {% endfor %}
+  </dl>
+
   <h2>Adding a model</h2>
   <p>
     Subclass <code>Model</code> in <code>backcast/models.py</code>, return a <code>Forecast</code> with the median
