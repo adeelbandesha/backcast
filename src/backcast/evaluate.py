@@ -268,6 +268,7 @@ def verdict(board: pd.DataFrame, results: pd.DataFrame, horizon: int) -> Verdict
 
 
 def headline(result: Verdict) -> str:
+    """The verdict in one sentence: did the best model beat naive, and is the margin bigger than noise."""
     name = MODELS_BY_KEY[result.best].name if result.best in MODELS_BY_KEY else result.best  # scored forecasts
     margin = abs(result.relative_change)
     amount = f"{margin:.1%}" if margin >= 0.0005 else "less than 0.1%"

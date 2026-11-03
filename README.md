@@ -13,6 +13,20 @@ only on prices the model hadn't seen, and then tests whether the difference is b
 
 ![Backtest results for AAPL at a 5-day horizon: the verdict, the trend note, the SPA p-value and the leaderboard](https://raw.githubusercontent.com/adeelbandesha/backcast/main/docs/results.png)
 
+## What you can do
+
+| To | Run | More |
+|---|---|---|
+| Test every model against naive on a stock | `backcast run AAPL --horizon 5` | [Getting started](#getting-started) |
+| See the results, charts and the S&P 500 study in a browser | `backcast web` | [The web app](#the-web-app) |
+| Test whether models can forecast volatility | `backcast volatility AAPL` | [Volatility](#volatility) |
+| Score forecasts you made some other way | `backcast score my_forecasts.csv AAPL` | [Scoring your own forecasts](#scoring-your-own-forecasts) |
+| Use your own price files or data provider | `BACKCAST_PRICE_SOURCE=csv BACKCAST_CSV_DIR=~/prices backcast run AAPL` | [Price data](#price-data) |
+| Add Amazon's pretrained Chronos-Bolt model | `pip install "backcast[foundation]"` | [Chronos-Bolt](#chronos-bolt) |
+| Rerun the S&P 500 study (needs a clone) | `uv run python scripts/study.py run` | [Running the study yourself](#running-the-study-yourself) |
+
+Every command takes `--help`, and the Python functions in the examples have docstrings, so `help(score)` works too.
+
 - [How it works](#how-it-works)
 - [What it found](#what-it-found)
 - [Limits](#limits)
@@ -128,20 +142,26 @@ None of this is investment advice.
 
 ## Getting started
 
-You need [uv](https://docs.astral.sh/uv/). It will download Python 3.13 if you don't have it.
+Backcast needs Python 3.13 and a C++ compiler (see below). To use it:
 
 ```bash
+pip install backcast
+backcast run SPY --horizon 5
+```
+
+To change the code, run the tests, rerun the study or build the Docker image, work from a clone instead. You need
+[uv](https://docs.astral.sh/uv/), which downloads Python 3.13 if you don't have it:
+
+```bash
+git clone https://github.com/adeelbandesha/backcast
+cd backcast
 uv sync
 uv run backcast run SPY --horizon 5
 ```
 
-If you'd rather use pip, any Python 3.13 environment works. `requirements.txt` pins the same versions as `uv.lock`:
-
-```bash
-pip install -r requirements.txt
-pip install -e .
-backcast run SPY --horizon 5
-```
+The examples in this README are written as `backcast ...`. In a clone, put `uv run` in front, or activate `.venv`
+first. If you'd rather use pip in a clone, `requirements.txt` pins the same versions as `uv.lock`:
+`pip install -r requirements.txt` and then `pip install -e .`.
 
 You also need a C++ compiler. statsforecast, which supplies ETS, ARIMA and Theta, publishes no wheel for Python
 3.13, so uv and pip both build it from source during the install. On Linux that means `g++` (`build-essential` on
@@ -180,7 +200,7 @@ problem at 73%, yet it has the best interval score: its narrower intervals saved
 ## The web app
 
 ```bash
-uv run backcast web
+backcast web
 ```
 
 This starts the site and a worker beside it. Open http://127.0.0.1:8000 and search for a company or ticker. The
@@ -220,11 +240,12 @@ learned from a large collection of time series and forecasts a new one without b
 PyTorch, so it is an optional extra:
 
 ```bash
-uv sync --extra foundation        # or: pip install -e ".[foundation]"
+pip install "backcast[foundation]"        # in a clone: uv sync --extra foundation
 ```
 
 uv installs the CPU build of PyTorch, about 800 MB on disk, rather than the default Linux build, which adds several
-GB of CUDA libraries. pip takes PyTorch from PyPI unless you point it at the CPU index. Chronos-Bolt runs on an
+GB of CUDA libraries. pip takes PyTorch from PyPI, CUDA and all, unless you install the CPU build first:
+`pip install torch --index-url https://download.pytorch.org/whl/cpu`. Chronos-Bolt runs on an
 NVIDIA GPU if PyTorch was built with CUDA and finds one, on the GPU of an Apple silicon Mac, and on the CPU otherwise.
 With uv, an NVIDIA GPU needs the CUDA build installed over the CPU one, from PyTorch's index for your CUDA version
 (see pytorch.org): `uv pip install torch --index-url <that index>`. A later `uv sync` puts the CPU build back. With
@@ -254,7 +275,7 @@ The size of a stock's moves is far more predictable than their direction. Big mo
 months volatility drifts back to its usual level. A second backtest asks whether models can forecast it:
 
 ```bash
-uv run backcast volatility SPY --horizon 5
+backcast volatility SPY --horizon 5
 ```
 
 In the web app it's the Volatility tab on any backtest page. The schedule is the same as for prices: a forecast
@@ -297,7 +318,14 @@ from intraday prices.
 
 If you made forecasts some other way, Backcast can score them against naive with the same metrics and tests. Put
 one forecast per row in a table: `date` is the trading day whose close you forecast from, and `forecast` is the
-price you expected `horizon` trading days later.
+price you expected `horizon` trading days later. From the command line:
+
+```bash
+backcast score my_forecasts.csv AAPL --horizon 5
+```
+
+That prints the same verdict and table as `backcast run`, with your forecasts and naive as the only two rows. In
+Python:
 
 ```python
 import pandas as pd
@@ -333,8 +361,8 @@ Prices come from Yahoo Finance by default, with no account or key needed. `BACKC
 command line and the web app to another source, named or given as a module path:
 
 ```bash
-BACKCAST_PRICE_SOURCE=csv BACKCAST_CSV_DIR=~/prices uv run backcast run AAPL
-BACKCAST_PRICE_SOURCE=mysources.feed uv run backcast web
+BACKCAST_PRICE_SOURCE=csv BACKCAST_CSV_DIR=~/prices backcast run AAPL
+BACKCAST_PRICE_SOURCE=mysources.feed backcast web
 ```
 
 Backcast ships two sources, `yahoo` and `csv`, and doesn't include any paid data provider. If you have a licence for

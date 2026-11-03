@@ -161,7 +161,11 @@ def _chronos(checkpoint: str):
     """
     import torch
     from chronos import BaseChronosPipeline
+    from huggingface_hub.utils import enable_progress_bars
+    from transformers.utils import logging
 
+    logging.disable_progress_bar()  # otherwise every worker process prints a "Loading weights" bar
+    enable_progress_bars()  # but keep the bar for the first download
     device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     return BaseChronosPipeline.from_pretrained(checkpoint, device_map=device, torch_dtype=torch.float32)
 

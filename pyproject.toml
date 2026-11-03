@@ -43,6 +43,7 @@ foundation = ["chronos-forecasting>=2.3.2", "torch>=2.15.0"]
 
 [project.urls]
 Homepage = "https://github.com/adeelbandesha/backcast"
+Documentation = "https://github.com/adeelbandesha/backcast#readme"
 Repository = "https://github.com/adeelbandesha/backcast"
 Issues = "https://github.com/adeelbandesha/backcast/issues"
 
