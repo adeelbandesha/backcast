@@ -8,6 +8,7 @@ urlpatterns = [
     path("volatility/<str:symbol>/", views.backtest, {"target": "volatility"}, name="volatility"),
     path("runs/<slug:run_id>/", views.run, name="run"),
     path("runs/<slug:run_id>/results/", views.run_results, name="run-results"),
+    path("score/", views.score_forecasts, name="score"),
     path("models/", views.models, name="models"),
     path("method/", views.method, name="method"),
     path("findings/", views.findings, name="findings"),

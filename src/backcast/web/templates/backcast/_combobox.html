@@ -1,4 +1,4 @@
-<div class="combobox{% if compact %} combobox-compact{% endif %}" data-combobox data-search-url="{% url 'search' %}">
+<div class="combobox{% if compact %} combobox-compact{% endif %}" data-combobox data-search-url="{% url 'search' %}"{% if fill_only %} data-pick="fill"{% endif %}>
   <label for="{{ field_id }}"{% if compact %} class="visually-hidden"{% endif %}>{{ label }}</label>
   <input id="{{ field_id }}" name="symbol" type="text" value="{{ value|default:'' }}"
          role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="{{ field_id }}-options"

@@ -107,7 +107,7 @@ def execute(run_id: str, prices):
             results = _summarize_volatility(volatility.run_backtest(prices, run.horizon))
             run.html = render_to_string("backcast/_volatility_results.html", {"results": results})
         else:
-            results = _summarize(run_backtest(prices, run.horizon))
+            results = summarize(run_backtest(prices, run.horizon))
             run.html = render_to_string("backcast/_results.html", {"results": results})
         run.status = Run.DONE
     except (DataError, ValueError) as error:  # their messages are written for people
@@ -137,14 +137,15 @@ def precompute():
                 submit(run_id, prices, horizon, target)
 
 
-def _summarize(report) -> dict:
+def summarize(report) -> dict:
     """Everything _results.html and its charts need, as plain values."""
     verdict = report.verdict
     rows = [
         {
             "key": row.model,
-            "name": MODELS_BY_KEY[row.model].name,
-            "family": MODELS_BY_KEY[row.model].family,
+            # Uploaded forecasts (see views.score_forecasts) are named by their key.
+            "name": MODELS_BY_KEY[row.model].name if row.model in MODELS_BY_KEY else row.model,
+            "family": MODELS_BY_KEY[row.model].family if row.model in MODELS_BY_KEY else "Uploaded",
             "mae": f"{row.mae:.2%}",
             "change": versus(row.model, row.relative_mae),
             "crps": versus(row.model, row.relative_crps),

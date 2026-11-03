@@ -44,7 +44,7 @@
           <tr{% if row.key == 'naive' %} class="baseline-row"{% endif %}>
             <th scope="row">
               <span class="model-name">{{ row.name }}</span>
-              <span class="model-family">{{ row.family }}{% if row.best %} · best model{% endif %}</span>
+              <span class="model-family">{{ row.family }}{% if row.best and r.rivals > 1 %} · best model{% endif %}</span>
             </th>
             <td class="num">{{ row.mae }}</td>
             <td class="num {{ row.change.tone }}">{{ row.change.text }}</td>
@@ -100,16 +100,19 @@
 
 <section class="charts" aria-labelledby="charts-title">
   <h2 id="charts-title">Forecasts</h2>
+  {% if r.rivals > 1 %}
   <fieldset class="segmented model-picker">
     <legend>Compare with naive</legend>
     <div class="segmented-options">
       {% for row in r.rows %}{% if row.key != 'naive' %}
-        <input type="radio" name="model" value="{{ row.key }}" id="model-{{ row.key }}"{% if row.best %} checked{% endif %}>
-        <label for="model-{{ row.key }}">{{ row.name }}</label>
+        <input type="radio" name="model" value="{{ row.key }}" id="model-{{ forloop.counter }}"{% if row.best %} checked{% endif %}>
+        <label for="model-{{ forloop.counter }}">{{ row.name }}</label>
       {% endif %}{% endfor %}
     </div>
   </fieldset>
+  {% endif %}
 
+  {% if r.chart.future.dates %}
   <figure class="chart" data-chart="price">
     <figcaption>
       <h3>The next {{ r.horizon }} trading day{{ r.horizon|pluralize }}</h3>
@@ -122,6 +125,7 @@
     <div class="chart-plot"></div>
     <details class="chart-data"><summary>Show the data</summary><div class="table-scroll"></div></details>
   </figure>
+  {% endif %}
 
   <figure class="chart" data-chart="cumulative">
     <figcaption>

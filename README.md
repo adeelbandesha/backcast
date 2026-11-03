@@ -236,6 +236,10 @@ that is zero, negative or out of order is refused with a message that says which
 Backcast can check the dates, but it can't tell whether a forecast used prices from after its date. That part is up
 to you.
 
+The web app does the same at `/score/` ("Score yours" in the menu): pick the stock and horizon and upload the CSV.
+The results page is the backtest's, without the forecast of the next few days. Uploads aren't saved, so unlike a
+backtest the results have no permalink.
+
 ## Price data
 
 Prices come from Yahoo Finance by default, with no account or key needed. `BACKCAST_PRICE_SOURCE` switches the
