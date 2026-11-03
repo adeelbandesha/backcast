@@ -62,6 +62,7 @@ build-backend = "uv_build"
 dev = [
     "pytest>=9.1.1",
     "pytest-django>=4.14.0",
+    "pytest-playwright>=0.10.0",
     "ruff>=0.17.2",
 ]
 
@@ -84,3 +85,5 @@ select = ["E", "F", "I", "B", "UP"]
 DJANGO_SETTINGS_MODULE = "tests.settings"
 pythonpath = ["."]
 testpaths = ["tests"]
+# Browser tests use the installed Google Chrome (GitHub's Ubuntu runners have it), so no browser download.
+addopts = "--browser-channel chrome"
