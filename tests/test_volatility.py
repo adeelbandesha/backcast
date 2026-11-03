@@ -73,6 +73,7 @@ def test_garch_beats_naive_on_garch_data_and_the_long_run_average_wins_without_c
     board = calm.board.set_index("model")
     assert board.at["long_run", "gain"] > 0  # with constant volatility, a month of data is just a noisier average
     assert board.at["long_run", "qlike"] <= board.qlike.min() + 0.01
+    assert "SPA p-value that no model beats the long-run average" in calm._repr_html_()
 
 
 def test_leaderboard_scores_qlike_against_naive():

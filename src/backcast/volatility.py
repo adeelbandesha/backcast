@@ -24,6 +24,7 @@ from .evaluate import (
     _diebold_mariano,
     _holm,
     _pool,
+    report_html,
     required_prices,
     superior_predictive_ability,
 )
@@ -286,6 +287,23 @@ class Report:
     results: pd.DataFrame
     board: pd.DataFrame
     verdict: Verdict
+
+    def table(self) -> pd.DataFrame:
+        """The leaderboard with model names. QLIKE: lower is better; volatility is annualized."""
+        return self.board.assign(model=self.board.model.map(lambda key: MODELS_BY_KEY[key].name))
+
+    def summary(self) -> list[str]:
+        result = self.verdict
+        return [
+            f"{headline(result)} {long_run_note(result)}",
+            f"Realized volatility over the period: {result.realized:.1%} a year.",
+            f"SPA p-value that no model beats naive: {result.p_value:.3f}",
+            f"SPA p-value that no model beats the long-run average: {result.long_run_p_value:.3f}",
+            "QLIKE: lower is better; gain is how much lower than naive's. Volatility is annualized.",
+        ]
+
+    def _repr_html_(self) -> str:
+        return report_html(self.summary(), self.table())
 
 
 def run_backtest(prices: pd.Series, horizon: int, models: list[VolatilityModel] = MODELS) -> Report:
