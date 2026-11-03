@@ -206,6 +206,36 @@ than a 5% test flags by chance. Volatility clustering is there, but with daily c
 rarely beats the plain average on a single stock. The studies that find a clear edge measure each day's volatility
 from intraday prices.
 
+## Scoring your own forecasts
+
+If you made forecasts some other way, Backcast can score them against naive with the same metrics and tests. Put
+one forecast per row in a table: `date` is the trading day whose close you forecast from, and `forecast` is the
+price you expected `horizon` trading days later.
+
+```python
+import pandas as pd
+
+from backcast.data import load_prices
+from backcast.evaluate import headline, score
+
+forecasts = pd.read_csv("my_forecasts.csv")  # columns: date, forecast, and optionally q10 ... q90
+report = score(forecasts, load_prices("AAPL"), horizon=5)
+print(headline(report.verdict))
+print(report.board)
+```
+
+The forecast is scored as a median, on log prices, like the built-in models. Add `q10` and `q90` columns for an 80%
+interval, which gives coverage and the interval score. With all nine quantiles, `q10`, `q20` and so on up to `q90`,
+CRPS is scored too. Naive is forecast from each of your dates, so both are scored on the same days.
+
+You need at least 100 forecasts whose target date has passed. Forecasts whose target is still in the future are
+left out. The price history has to start at least 200 trading days before your first forecast so the up and down
+market split can be worked out. A date that isn't a trading day, two forecasts from one day, or a price or quantile
+that is zero, negative or out of order is refused with a message that says which.
+
+Backcast can check the dates, but it can't tell whether a forecast used prices from after its date. That part is up
+to you.
+
 ## Price data
 
 Prices come from Yahoo Finance by default, with no account or key needed. `BACKCAST_PRICE_SOURCE` switches the
