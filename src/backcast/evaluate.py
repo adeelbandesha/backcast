@@ -13,7 +13,7 @@ from arch.bootstrap import SPA
 from scipy.stats import t
 
 from .data import trading_days_after
-from .models import LEVEL, MODELS, MODELS_BY_KEY, QUANTILES, Forecast, Model
+from .models import LEVEL, MODELS, MODELS_BY_KEY, QUANTILES, Forecast, Model, Naive
 
 HORIZONS = (1, 5, 20)
 ORIGINS = 504  # about two years of trading days, one forecast origin per day
@@ -60,35 +60,42 @@ def walk_forward(
         _forecast_block, [y[: block[-1]] for block in blocks], blocks, repeat(horizon), repeat(models)
     )
     average = prices.rolling(TREND_DAYS).mean().to_numpy()
-    rows = []
-    for origin, endpoints in zip(chain(*blocks), chain(*forecasts), strict=True):
-        actual = np.log(y[origin + horizon - 1])
-        for model, (predicted, quantiles) in zip(models, endpoints, strict=True):
-            with np.errstate(invalid="ignore", divide="ignore"):
-                point, quantiles = np.log(predicted), np.log(quantiles)
-            # Fail loudly: a NaN score would be skipped by the averages, and the models compared on different days.
-            if not (np.isfinite(point) and np.isfinite(quantiles).all() and (np.diff(quantiles) >= 0).all()):
-                raise ValueError(
-                    f"{model.name} gave an invalid forecast on {prices.index[origin - 1]:%d %b %Y}: the forecast and "
-                    "its quantiles must be positive prices, with the quantiles in increasing order."
-                )
-            rows.append(
-                {
-                    "model": model.key,
-                    "origin": prices.index[origin - 1],
-                    "target": prices.index[origin + horizon - 1],
-                    "last": y[origin - 1],
-                    "actual": y[origin + horizon - 1],
-                    "predicted": predicted,
-                    "lower": np.exp(quantiles[0]),
-                    "upper": np.exp(quantiles[-1]),
-                    "error": abs(actual - point),
-                    "crps": _crps(quantiles, actual),
-                    "interval": _interval_score(quantiles[0], quantiles[-1], actual),
-                    "uptrend": y[origin - 1] > average[origin - 1],
-                }
-            )
+    rows = [
+        _row(model.key, model.name, y, prices.index, average, origin, horizon, predicted, quantiles)
+        for origin, endpoints in zip(chain(*blocks), chain(*forecasts), strict=True)
+        for model, (predicted, quantiles) in zip(models, endpoints, strict=True)
+    ]
     return pd.DataFrame(rows)
+
+
+def _row(key, name, y, dates, average, origin, horizon, predicted, quantiles) -> dict:
+    """Score one forecast of `y[origin + horizon - 1]` made from `y[:origin]`. `quantiles` holds all of
+    `QUANTILES`, only the outer pair (the 80% interval, so no CRPS), or nothing (a point forecast).
+    """
+    actual = np.log(y[origin + horizon - 1])
+    with np.errstate(invalid="ignore", divide="ignore"):
+        point, quantiles = np.log(predicted), np.log(np.asarray(quantiles, dtype=float))
+    # Fail loudly: a NaN score would be skipped by the averages, and the models compared on different days.
+    if not (np.isfinite(point) and np.isfinite(quantiles).all() and (np.diff(quantiles) >= 0).all()):
+        raise ValueError(
+            f"{name} gave an invalid forecast on {dates[origin - 1]:%d %b %Y}: the forecast and its quantiles must "
+            "be positive prices, with the quantiles in increasing order."
+        )
+    interval = len(quantiles) > 0
+    return {
+        "model": key,
+        "origin": dates[origin - 1],
+        "target": dates[origin + horizon - 1],
+        "last": y[origin - 1],
+        "actual": y[origin + horizon - 1],
+        "predicted": predicted,
+        "lower": np.exp(quantiles[0]) if interval else np.nan,
+        "upper": np.exp(quantiles[-1]) if interval else np.nan,
+        "error": abs(actual - point),
+        "crps": _crps(quantiles, actual) if len(quantiles) == len(QUANTILES) else np.nan,
+        "interval": _interval_score(quantiles[0], quantiles[-1], actual) if interval else np.nan,
+        "uptrend": y[origin - 1] > average[origin - 1],
+    }
 
 
 def required_prices(horizon: int) -> int:
@@ -130,7 +137,7 @@ def _forecast_block(known: np.ndarray, origins: range, horizon: int, models: lis
     endpoints = []
     for origin in origins:
         forecasts = [forecaster(known[:origin]) for forecaster in forecasters]
-        endpoints.append([(float(f.median[-1]), f.quantiles[:, -1]) for f in forecasts])
+        endpoints.append([_endpoint(f) for f in forecasts])
     return endpoints
 
 
@@ -156,7 +163,7 @@ def leaderboard(results: pd.DataFrame, horizon: int) -> pd.DataFrame:
                 "tie_rate": tied.mean() if key != "naive" else np.nan,
                 "p_value": np.nan if tied.all() else _diebold_mariano(improvement.to_numpy(), horizon),
                 "direction": direction,
-                "coverage": group.actual.between(group.lower, group.upper).mean(),
+                "coverage": group.actual.between(group.lower, group.upper).where(group.lower.notna()).mean(),
             }
         )
     board = pd.DataFrame(rows)
@@ -261,7 +268,7 @@ def verdict(board: pd.DataFrame, results: pd.DataFrame, horizon: int) -> Verdict
 
 
 def headline(result: Verdict) -> str:
-    name = MODELS_BY_KEY[result.best].name
+    name = MODELS_BY_KEY[result.best].name if result.best in MODELS_BY_KEY else result.best  # scored forecasts
     margin = abs(result.relative_change)
     amount = f"{margin:.1%}" if margin >= 0.0005 else "less than 0.1%"
     if result.significant:
@@ -270,6 +277,8 @@ def headline(result: Verdict) -> str:
         return f"{name} edged out the naive forecast by {amount}, but the margin is within the noise."
     if np.isclose(result.relative_change, 0):
         return "Nothing beat the naive forecast. The best any model managed was to match it."
+    if result.best not in MODELS_BY_KEY:  # scored forecasts are the only rival, so there's no "closest"
+        return f"{name} didn't beat the naive forecast: the error was {amount} higher."
     return f"Nothing beat the naive forecast. The closest, {name}, was {amount} less accurate."
 
 
@@ -314,3 +323,61 @@ def future_paths(prices: pd.Series, horizon: int, models: list[Model] = MODELS) 
     y = prices.to_numpy(dtype=float)
     dates = trading_days_after(prices.index[-1], horizon, prices.attrs.get("calendar"))
     return dates, {model.key: model.forecast(y, horizon) for model in models}
+
+
+def score(forecasts: pd.DataFrame, prices: pd.Series, horizon: int, name: str = "Your forecasts") -> Report:
+    """Score forecasts made elsewhere against naive, with the same metrics and tests as a backtest.
+
+    `forecasts` has one row per forecast: `date`, the trading day whose close it was made after, and `forecast`,
+    the price it predicts `horizon` trading days later, scored as the median. Optional `q10` to `q90` columns are
+    its quantiles: `q10` and `q90` alone give the 80% interval, all nine add CRPS. Forecasts whose target is after
+    the last price are left out until it arrives. The dates can be checked; that no later price was used can't be.
+    """
+    if name == "naive":
+        raise ValueError('"naive" is the benchmark\'s name; give your forecasts another.')
+    missing = {"date", "forecast"} - set(forecasts.columns)
+    if missing:
+        raise ValueError(f"The forecasts need a {' and a '.join(sorted(missing))} column.")
+    dates = pd.DatetimeIndex(pd.to_datetime(forecasts["date"]))
+    dates = (dates.tz_localize(None) if dates.tz else dates).normalize()
+    if (repeated := dates[dates.duplicated()]).size:
+        raise ValueError(f"There is more than one forecast from {repeated[0]:%d %b %Y}.")
+    positions = prices.index.get_indexer(dates)
+    if (positions < 0).any():
+        raise ValueError(f"{dates[positions < 0][0]:%d %b %Y} isn't a trading day in the prices.")
+    if positions.min() < TREND_DAYS - 1:
+        raise ValueError(f"The prices need to start at least {TREND_DAYS} trading days before the first forecast.")
+
+    levels = [f"q{round(q * 100)}" for q in QUANTILES]
+    if set(levels) <= set(forecasts.columns):
+        columns = levels
+    elif {"q10", "q90"} <= set(forecasts.columns):
+        columns = ["q10", "q90"]
+    else:
+        columns = []
+    y = prices.to_numpy(dtype=float)
+    average = prices.rolling(TREND_DAYS).mean().to_numpy()
+    naive = Naive()
+    rows = []
+    for position, predicted, quantiles in zip(
+        positions, forecasts["forecast"].to_numpy(dtype=float), forecasts[columns].to_numpy(dtype=float), strict=True
+    ):
+        origin = position + 1  # the number of prices known when the forecast was made
+        if origin + horizon > len(y):
+            continue
+        benchmark = naive.forecast(y[:origin], horizon)
+        rows.append(_row("naive", naive.name, y, prices.index, average, origin, horizon, *_endpoint(benchmark)))
+        rows.append(_row(name, name, y, prices.index, average, origin, horizon, predicted, quantiles))
+    if len(rows) // 2 < MIN_ORIGINS:
+        raise ValueError(
+            f"Scoring needs at least {MIN_ORIGINS} forecasts whose target date has passed, got {len(rows) // 2}."
+        )
+
+    results = pd.DataFrame(rows).sort_values(["origin", "model"], kind="stable", ignore_index=True)
+    board = leaderboard(results, horizon)
+    no_future = pd.DatetimeIndex([])
+    return Report(prices, horizon, results, board, by_trend(results), verdict(board, results, horizon), no_future, {})
+
+
+def _endpoint(forecast: Forecast) -> tuple[float, np.ndarray]:
+    return float(forecast.median[-1]), forecast.quantiles[:, -1]
