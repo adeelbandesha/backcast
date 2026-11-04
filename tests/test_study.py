@@ -146,3 +146,27 @@ def test_export_lists_each_failed_backtest_once(tmp_path, monkeypatch):
         {"symbol": "AAA", "horizon": 20, "seed": None, "reason": "Too short."},
     ]
     assert (study["tested"], study["models"]) == (1, ["naive", "drift"])
+
+
+def test_cost_check_charges_each_change_of_position():
+    spec = importlib.util.spec_from_file_location("cost_check", Path(__file__).parents[1] / "scripts/cost_check.py")
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    results = pd.DataFrame(
+        {
+            "model": ["naive", "theta"] * 3,
+            "last": [100.0] * 6,
+            "predicted": [100, 101, 100, 99, 100, 99],  # theta: long, short, short
+            "actual": [102, 102, 99, 99, 100, 100],
+        }
+    )
+
+    board = script.trading(results)
+
+    assert board.model.tolist() == ["theta"]  # naive never trades
+    row = board.iloc[0]
+    # Returns +2%, +1%, 0%; trades 1 unit to go long, 2 to turn short, then none: 1 a day on average.
+    assert row.turnover == pytest.approx(1)
+    assert row.break_even == pytest.approx(100)
+    assert row.gross == pytest.approx(0.01 * 252)
+    assert row.net_5 == pytest.approx((0.01 - 0.0005) * 252)
