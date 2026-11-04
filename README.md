@@ -123,6 +123,12 @@ At five and twenty days, the real stocks turned up no more winners than the plac
 more than luck explains, but the edge is small: 0.1% to 0.5% less error than naive, mostly because a day's move
 tends to be partly undone the next day. The median correlation between one day's return and the next was −0.024.
 
+Trading that reversal shows how little it is worth. `scripts/cost_check.py` held each stock long or short on each
+model's one-day forecast. Before costs, Theta made 8.9% a year at the median stock, and lost 1.3% on a placebo. It
+changes position so often that its profit was gone at a cost of 5.7 basis points per trade. At 1 basis point it
+made 7.5% a year, less than the 10.5% from simply holding the stock. That is with trades at the very close the
+forecast was made from, no fee for borrowing shares and no dividends, all of which flatter it.
+
 ![The share of stocks where a model won at each horizon, against the placebos, and where the SPA p-values fell](https://raw.githubusercontent.com/adeelbandesha/backcast/main/docs/findings.png)
 
 The Findings page in the web app (`/findings/`) has the full results, each model on its own, the stocks where a
@@ -160,7 +166,7 @@ Read the results with these in mind:
   and at least 100 forecasts after it.
 - Only the price history goes in. There's no volume, no fundamentals, no news.
 - Errors are measured on prices, not on trading returns. A model that beats naive here could still lose money once
-  you add costs.
+  you add costs, as the one-day edge above shows.
 - Dividends aren't added back. On the day a stock goes ex-dividend its price drops by about the dividend, and none
   of the models forecast that.
 - Future dates follow the exchange's holiday calendar for most major exchanges. For the rest, they skip weekends
@@ -515,7 +521,8 @@ src/backcast/
     models.py    the saved run
 tests/           engine, data, price source, study, view and browser tests; none of them touch the network
 scripts/         refit_check.py, the experiment behind the refit interval; study.py, the S&P 500 study;
-                 volatility_check.py, the volatility backtest across the study's stocks
+                 volatility_check.py, the volatility backtest across the study's stocks; cost_check.py, the
+                 one-day forecasts traded after costs
 ```
 
 ## Deploying

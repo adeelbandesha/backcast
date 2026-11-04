@@ -48,7 +48,20 @@
       the next was −0.024, and it was negative for 70% of stocks. Theta and ETS forecasts sit a little behind the
       latest price, so they gain when a move partly reverses. Theta's error was lower than naive's on 59% of the
       real stocks but only 33% of the placebos, where the random signs wipe out any reversal. At the median stock
-      the difference was 0.02%, far too small to trade on.
+      the difference was 0.02%.
+    </p>
+    <p>
+      A small edge can still pay, so <code>scripts/cost_check.py</code> traded it. At each close it held the stock
+      when a model forecast a rise and sold it short when the model forecast a fall, and it charged a cost each time
+      the position changed. Before costs, Theta and ETS both earned 8.9% a year at the median stock. On the first
+      placebo draw Theta lost 1.3% and ETS made 1.4%, so the reversal is real. But they trade often: Theta turns its
+      position around about one day in three and ETS about every other day. At the median stock, Theta's profit was
+      gone at a cost of 5.7 basis points (hundredths of a percent) per trade and ETS's at 3.6. With 1 basis point,
+      Theta still made 7.5% a year, less than the 10.5% from simply holding the stock, though a position that switches
+      between long and short doesn't carry the same risk. With 5, Theta made 1.2% and ETS lost 3.6%. All of this is
+      generous to the strategy: it trades at the same close the forecast was made from, which in practice means
+      sending the order before that close is known, pays nothing to borrow shares for the shorts, and leaves out
+      dividends.
     </p>
     <p>
       Valero is a good example of a trend passing for skill. It won at one day and at twenty, both times with Drift,

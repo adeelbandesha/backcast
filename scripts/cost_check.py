@@ -9,7 +9,7 @@ to trade. The Findings page quotes its output.
 It is kind to the strategy: it trades at the close its forecast was made from, with no borrowing fee for shorts and
 no dividends either way (the prices aren't adjusted for them).
 
-    uv run python scripts/cost_check.py --work ../backcast-study/study-work   # about three hours on eight cores
+    uv run python scripts/cost_check.py --work ../backcast-study/study-work   # 3.5 hours on eight cores
 
 Stopping it and running the same command again carries on where it stopped.
 """
