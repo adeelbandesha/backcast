@@ -161,7 +161,7 @@
     <li>A backtest needs at least {{ min_history }} days of history before the first forecast and {{ min_origins }} forecasts after it, so recently listed stocks can't be tested.</li>
     <li>Dividends aren't added back, so on the day a stock goes ex-dividend its price drops by roughly the dividend, and no model here forecasts that.</li>
     <li>Only the price history is used: no volume, fundamentals, news, or other stocks.</li>
-    <li>Errors are measured on prices, not on trading returns. There are no transaction costs or positions.</li>
+    <li>Errors are measured on prices, not on trading returns, so a model that beats naive here could still lose money once you add costs. The <a href="{% url 'findings' %}">Findings</a> page shows that happening to the one-day edge.</li>
     <li>Future dates follow the exchange's holiday calendar for most major exchanges. For the rest, they skip weekends only, and the chart says so.</li>
   </ul>
 </article>
